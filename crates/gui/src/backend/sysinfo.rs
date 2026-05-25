@@ -1,12 +1,24 @@
-use std::{collections::{HashMap, VecDeque}, sync::Arc, thread::JoinHandle, time::{Duration, Instant}};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+    thread::JoinHandle,
+    time::{Duration, Instant},
+};
 
-use egui::{ProgressBar, WidgetText, mutex::Mutex};
+use egui::{WidgetText, mutex::Mutex};
 use sysinfo::{DiskUsage, Gid, Pid, ProcessesToUpdate, System, Uid};
 use ustr::Ustr;
 
-use crate::{Backend, BackendPanel, BackendPanelId, BackendPanelInfo, backend::sysinfo::proc_list::ProcessesPanel};
+use crate::{
+    Backend, BackendPanel, BackendPanelId, BackendPanelInfo,
+    backend::sysinfo::{cpu::CpuPanel, memory::MemoryPanel, proc_list::ProcessesPanel},
+};
 
+mod cpu;
+mod memory;
 mod proc_list;
+
+const MAX_HISTORY_SNAPSHOTS: usize = 600;
 
 pub struct SysinfoBackend {
     state: Arc<Mutex<SysinfoSharedState>>,
@@ -32,7 +44,10 @@ impl SysinfoBackend {
             let state = Arc::clone(&state);
             std::thread::spawn(move || worker_thread(state))
         };
-        Self { state, updater: Some(updater) }
+        Self {
+            state,
+            updater: Some(updater),
+        }
     }
 }
 
@@ -42,19 +57,28 @@ impl Backend for SysinfoBackend {
     }
 
     fn panels(&self) -> Vec<BackendPanelInfo> {
-        vec![BackendPanelInfo {
-            id: BackendPanelId("memory".into()),
-            title: "Memory".into(),
-            description: "Shows memory usage".into(),
-        }, BackendPanelInfo {
-            id: BackendPanelId("processes".into()),
-            title: "Processes".into(),
-            description: "Shows process information".into(),
-        }]
+        vec![
+            BackendPanelInfo {
+                id: BackendPanelId("cpu".into()),
+                title: "CPU".into(),
+                description: "Shows CPU usage".into(),
+            },
+            BackendPanelInfo {
+                id: BackendPanelId("memory".into()),
+                title: "Memory".into(),
+                description: "Shows memory usage".into(),
+            },
+            BackendPanelInfo {
+                id: BackendPanelId("processes".into()),
+                title: "Processes".into(),
+                description: "Shows process information".into(),
+            },
+        ]
     }
 
     fn new_panel(&self, panel_id: &BackendPanelId) -> Box<dyn BackendPanel> {
         match panel_id.0.as_str() {
+            "cpu" => Box::new(CpuPanel::new(self.state.clone())),
             "memory" => Box::new(MemoryPanel::new(self.state.clone())),
             "processes" => Box::new(ProcessesPanel::new(self.state.clone())),
             _ => panic!("Unknown panel id: {}", panel_id.0),
@@ -69,16 +93,14 @@ pub struct SysinfoConfig {
 
 impl Default for SysinfoConfig {
     fn default() -> Self {
-        Self { update_interval: Duration::from_secs(1) }
+        Self {
+            update_interval: Duration::from_secs(1),
+        }
     }
 }
 
-pub struct MemoryPanel {
-    state: Arc<Mutex<SysinfoSharedState>>,
-}
-
 #[derive(Debug, Clone, PartialEq)]
-struct SysinfoSharedState {
+pub(super) struct SysinfoSharedState {
     config: SysinfoConfig,
     data: Vec<SnapshotData>,
     cx: egui::Context,
@@ -97,17 +119,23 @@ impl SysinfoSharedState {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct SnapshotData {
+pub(super) struct SnapshotData {
+    captured_at: Instant,
     general_stats: GeneralStats,
+    cpu_stats: CpuStats,
     processes: HashMap<Pid, ProcessSnapshot>,
 }
 
 impl SnapshotData {
     fn take(sys: &mut System) -> Self {
+        sys.refresh_cpu_all();
         sys.refresh_processes(ProcessesToUpdate::All, true);
         Self {
+            captured_at: Instant::now(),
             general_stats: GeneralStats::take(sys),
-            processes: sys.processes()
+            cpu_stats: CpuStats::take(sys),
+            processes: sys
+                .processes()
                 .iter()
                 .map(|(pid, process)| (*pid, ProcessSnapshot::from_sysinfo(process)))
                 .collect(),
@@ -122,16 +150,19 @@ pub struct Snapshot<T> {
 
 impl<T> Snapshot<T> {
     pub fn new(data: T) -> Self {
-        Self { time: Instant::now(), data }
+        Self {
+            time: Instant::now(),
+            data,
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct GeneralStats {
-    total_memory: u64,
-    used_memory: u64,
-    total_swap: u64,
-    used_swap: u64,
+    pub(super) total_memory: u64,
+    pub(super) used_memory: u64,
+    pub(super) total_swap: u64,
+    pub(super) used_swap: u64,
 }
 
 impl GeneralStats {
@@ -146,20 +177,35 @@ impl GeneralStats {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub(super) struct CpuStats {
+    pub(super) global_usage: f32,
+    pub(super) per_cpu_usage: Vec<f32>,
+}
+
+impl CpuStats {
+    fn take(sys: &System) -> Self {
+        Self {
+            global_usage: sys.global_cpu_usage(),
+            per_cpu_usage: sys.cpus().iter().map(|cpu| cpu.cpu_usage()).collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
-struct ProcessSnapshot {
-    pid: Pid,
-    name: Ustr,
-    cmd: VecDeque<Ustr>,
-    cwd: Option<Ustr>,
-    accumulated_cpu_time: Duration,
-    cpu_usage: f32,
-    memory: u64,
-    virtual_memory: u64,
-    du: DiskUsage,
-    effective_group_id: Option<Gid>,
-    effective_user_id: Option<Uid>,
-    thread_kind: Option<sysinfo::ThreadKind>,
+pub(super) struct ProcessSnapshot {
+    pub(super) pid: Pid,
+    pub(super) name: Ustr,
+    pub(super) cmd: VecDeque<Ustr>,
+    pub(super) cwd: Option<Ustr>,
+    pub(super) accumulated_cpu_time: Duration,
+    pub(super) cpu_usage: f32,
+    pub(super) memory: u64,
+    pub(super) virtual_memory: u64,
+    pub(super) du: DiskUsage,
+    pub(super) effective_group_id: Option<Gid>,
+    pub(super) effective_user_id: Option<Uid>,
+    pub(super) thread_kind: Option<sysinfo::ThreadKind>,
 }
 
 impl ProcessSnapshot {
@@ -167,7 +213,11 @@ impl ProcessSnapshot {
         Self {
             pid: process.pid(),
             name: process.name().to_string_lossy().into(),
-            cmd: process.cmd().iter().map(|s| s.to_string_lossy().into()).collect(),
+            cmd: process
+                .cmd()
+                .iter()
+                .map(|s| s.to_string_lossy().into())
+                .collect(),
             cwd: process.cwd().map(|s| s.to_string_lossy().into()),
             accumulated_cpu_time: Duration::from_millis(process.accumulated_cpu_time()),
             cpu_usage: process.cpu_usage(),
@@ -193,7 +243,14 @@ fn worker_thread(state: Arc<Mutex<SysinfoSharedState>>) {
             (data.cx.clone(), data.config.update_interval)
         };
 
-        state.lock().data.push(SnapshotData::take(&mut sys));
+        let snapshot = SnapshotData::take(&mut sys);
+        let mut data = state.lock();
+        data.data.push(snapshot);
+        let excess = data.data.len().saturating_sub(MAX_HISTORY_SNAPSHOTS);
+        if excess > 0 {
+            data.data.drain(..excess);
+        }
+        drop(data);
         cx.request_repaint();
 
         let mut waited = Duration::from_secs(0);
@@ -205,51 +262,5 @@ fn worker_thread(state: Arc<Mutex<SysinfoSharedState>>) {
                 return;
             }
         }
-    }
-}
-
-impl MemoryPanel {
-    fn new(state: Arc<Mutex<SysinfoSharedState>>) -> Self {
-        Self { state }
-    }
-}
-
-impl BackendPanel for MemoryPanel {
-    fn title(&mut self) -> WidgetText {
-        "Memory".into()
-    }
-
-    fn ui(&mut self, ui: &mut egui::Ui) {
-        let data = self.state.lock();
-
-        if let Some(data) = data.data.last() {
-            ui.label(format!("Total memory: {} MB", data.general_stats.total_memory / 1024 / 1024));
-            ui.label(format!("Used memory: {} MB", data.general_stats.used_memory / 1024 / 1024));
-            ui.label(format!("Total swap: {} MB", data.general_stats.total_swap / 1024 / 1024));
-            ui.label(format!("Used swap: {} MB", data.general_stats.used_swap / 1024 / 1024));
-            let pb = ProgressBar::new(data.general_stats.used_memory as f32 / data.general_stats.total_memory as f32)
-                .text(format!("{:.1}%", (data.general_stats.used_memory as f64 / data.general_stats.total_memory as f64) * 100.0));
-            ui.add(pb);
-            let pb = ProgressBar::new(data.general_stats.used_swap as f32 / data.general_stats.total_swap as f32)
-                .text(format!("{:.1}%", (data.general_stats.used_swap as f64 / data.general_stats.total_swap as f64) * 100.0));
-            ui.add(pb);
-        } else {
-            ui.label("Loading...");
-        }
-
-        ui.collapsing("Settings", |ui| {
-            let mut config = data.config.clone();
-            ui.horizontal(|ui| {
-                ui.label("Update interval:");
-                let mut interval_secs = config.update_interval.as_secs_f32();
-                if ui.add(egui::Slider::new(&mut interval_secs, 0.05..=5.0).logarithmic(true)).changed() {
-                    config.update_interval = Duration::from_secs_f32(interval_secs);
-                }
-            });
-            if config != data.config {
-                drop(data);
-                self.state.lock().config = config;
-            }
-        });
     }
 }
