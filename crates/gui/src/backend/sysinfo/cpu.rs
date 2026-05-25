@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use egui::{mutex::Mutex, Color32, Grid, ProgressBar, Stroke, WidgetText};
-use egui_plot::{AxisHints, FilledArea, Legend, Line, Plot, PlotPoints};
+use egui_plot::{AxisHints, Corner, FilledArea, Legend, Line, Plot, PlotPoints};
 
 use crate::{backend::sysinfo::SysinfoSharedState, BackendPanel};
 
@@ -49,22 +49,24 @@ impl BackendPanel for CpuPanel {
         cpu_plot(ui, &data.data, self.show_per_cpu);
 
         ui.separator();
-        Grid::new("sysinfo_cpu_cores")
-            .num_columns(4)
-            .spacing([12.0, 4.0])
-            .show(ui, |ui| {
-                for (i, usage) in latest.cpu_stats.per_cpu_usage.iter().enumerate() {
-                    ui.label(format!("CPU {i}"));
-                    ui.add(
-                        ProgressBar::new((*usage / 100.0).clamp(0.0, 1.0))
-                            .desired_width(90.0)
-                            .text(format!("{usage:.0}%")),
-                    );
-                    if i % 2 == 1 {
-                        ui.end_row();
+        ui.collapsing("CPU Cores", |ui| {
+            Grid::new("sysinfo_cpu_cores")
+                .num_columns(4)
+                .spacing([12.0, 4.0])
+                .show(ui, |ui| {
+                    for (i, usage) in latest.cpu_stats.per_cpu_usage.iter().enumerate() {
+                        ui.label(format!("CPU {i}"));
+                        ui.add(
+                            ProgressBar::new((*usage / 100.0).clamp(0.0, 1.0))
+                                .desired_width(90.0)
+                                .text(format!("{usage:.0}%")),
+                        );
+                        if i % 2 == 1 {
+                            ui.end_row();
+                        }
                     }
-                }
-            });
+                });
+        });
 
         ui.collapsing("Settings", |ui| {
             let mut config = data.config.clone();
@@ -121,7 +123,7 @@ fn cpu_plot(
         .allow_scroll(false)
         .allow_boxed_zoom(false)
         .allow_double_click_reset(false)
-        .legend(Legend::default())
+        .legend(Legend::default().position(Corner::LeftTop))
         .custom_x_axes(vec![
             AxisHints::new_x().formatter(|mark, _| format_seconds_ago(mark.value))
         ])

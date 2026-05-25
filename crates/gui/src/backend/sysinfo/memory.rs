@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use egui::{mutex::Mutex, Color32, ProgressBar, WidgetText};
-use egui_plot::{AxisHints, Legend, Line, Plot, PlotPoints};
+use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
 use human_units::FormatSize;
 
 use crate::{
@@ -137,7 +137,7 @@ fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData]) {
         .allow_scroll(false)
         .allow_boxed_zoom(false)
         .allow_double_click_reset(false)
-        .legend(Legend::default())
+        .legend(Legend::default().position(Corner::LeftTop))
         .custom_x_axes(vec![
             AxisHints::new_x().formatter(|mark, _| format_seconds_ago(mark.value))
         ])
