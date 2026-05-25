@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
-use egui::{mutex::Mutex, Color32, Grid, ProgressBar, WidgetText};
-use egui_plot::{AxisHints, Legend, Line, Plot, PlotPoints};
+use egui::{mutex::Mutex, Color32, Grid, ProgressBar, Stroke, WidgetText};
+use egui_plot::{AxisHints, FilledArea, Legend, Line, Plot, PlotPoints};
 
 use crate::{backend::sysinfo::SysinfoSharedState, BackendPanel};
 
@@ -132,28 +132,123 @@ fn cpu_plot(
     plot.show(ui, |plot_ui| {
         plot_ui.set_plot_bounds_x(MIN_TIME_SECONDS..=max_time_seconds);
         plot_ui.set_plot_bounds_y(MIN_USAGE_PERCENT..=MAX_USAGE_PERCENT);
-        plot_ui.line(Line::new("Total", points).color(Color32::LIGHT_BLUE));
 
         if show_per_cpu {
-            let cpu_count = latest.cpu_stats.per_cpu_usage.len();
-            for cpu_index in 0..cpu_count {
-                let points: PlotPoints = snapshots
-                    .iter()
-                    .filter_map(|snapshot| {
-                        let usage = snapshot.cpu_stats.per_cpu_usage.get(cpu_index)?;
-                        let seconds_ago = latest
-                            .captured_at
-                            .duration_since(snapshot.captured_at)
-                            .as_secs_f64();
-                        Some([seconds_ago, clamp_percent(*usage as f64)])
-                    })
-                    .collect();
-                plot_ui.line(
-                    Line::new(format!("CPU {cpu_index}"), points).color(cpu_color(cpu_index)),
+            let layers = stacked_cpu_layers(snapshots, latest);
+            for layer in layers {
+                plot_ui.add(
+                    FilledArea::new(
+                        format!("CPU {}", layer.cpu_index),
+                        &layer.xs,
+                        &layer.lower,
+                        &layer.upper,
+                    )
+                    .fill_color(cpu_fill_color(layer.cpu_index))
+                    .stroke(Stroke::new(1.0, cpu_color(layer.cpu_index))),
                 );
             }
+        } else {
+            let total_layer = total_cpu_layer(snapshots, latest);
+            plot_ui.add(
+                FilledArea::new(
+                    "Total",
+                    &total_layer.xs,
+                    &total_layer.lower,
+                    &total_layer.upper,
+                )
+                .fill_color(Color32::from_rgba_unmultiplied(100, 181, 246, 150))
+                .stroke(Stroke::new(1.0, Color32::LIGHT_BLUE)),
+            );
         }
+
+        plot_ui.line(Line::new("Total", points).color(Color32::WHITE));
     });
+}
+
+struct CpuLayer {
+    cpu_index: usize,
+    xs: Vec<f64>,
+    lower: Vec<f64>,
+    upper: Vec<f64>,
+}
+
+fn stacked_cpu_layers(
+    snapshots: &[crate::backend::sysinfo::SnapshotData],
+    latest: &crate::backend::sysinfo::SnapshotData,
+) -> Vec<CpuLayer> {
+    let cpu_count = latest.cpu_stats.per_cpu_usage.len();
+    let mut layers = (0..cpu_count)
+        .map(|cpu_index| CpuLayer {
+            cpu_index,
+            xs: Vec::with_capacity(snapshots.len()),
+            lower: Vec::with_capacity(snapshots.len()),
+            upper: Vec::with_capacity(snapshots.len()),
+        })
+        .collect::<Vec<_>>();
+
+    for snapshot in snapshots {
+        let seconds_ago = latest
+            .captured_at
+            .duration_since(snapshot.captured_at)
+            .as_secs_f64();
+        let raw_sum = snapshot
+            .cpu_stats
+            .per_cpu_usage
+            .iter()
+            .map(|usage| clamp_percent(*usage as f64))
+            .sum::<f64>();
+        let total = clamp_percent(snapshot.cpu_stats.global_usage as f64);
+        let mut stack_top = MIN_USAGE_PERCENT;
+
+        for (cpu_index, layer) in layers.iter_mut().enumerate() {
+            let raw_usage = snapshot
+                .cpu_stats
+                .per_cpu_usage
+                .get(cpu_index)
+                .map(|usage| clamp_percent(*usage as f64))
+                .unwrap_or_default();
+            let scaled_usage = if raw_sum > 0.0 {
+                raw_usage / raw_sum * total
+            } else {
+                0.0
+            };
+            let next_stack_top = clamp_percent(stack_top + scaled_usage);
+
+            layer.xs.push(seconds_ago);
+            layer.lower.push(stack_top);
+            layer.upper.push(next_stack_top);
+            stack_top = next_stack_top;
+        }
+    }
+
+    layers
+}
+
+fn total_cpu_layer(
+    snapshots: &[crate::backend::sysinfo::SnapshotData],
+    latest: &crate::backend::sysinfo::SnapshotData,
+) -> CpuLayer {
+    let mut layer = CpuLayer {
+        cpu_index: 0,
+        xs: Vec::with_capacity(snapshots.len()),
+        lower: Vec::with_capacity(snapshots.len()),
+        upper: Vec::with_capacity(snapshots.len()),
+    };
+
+    for snapshot in snapshots {
+        let seconds_ago = latest
+            .captured_at
+            .duration_since(snapshot.captured_at)
+            .as_secs_f64();
+
+        layer.xs.push(seconds_ago);
+        layer.lower.push(MIN_USAGE_PERCENT);
+        layer
+            .upper
+            .push(clamp_percent(snapshot.cpu_stats.global_usage as f64));
+    }
+
+    layer
 }
 
 fn max_time_seconds(
@@ -196,4 +291,9 @@ fn cpu_color(index: usize) -> Color32 {
         Color32::from_rgb(255, 138, 101),
     ];
     COLORS[index % COLORS.len()]
+}
+
+fn cpu_fill_color(index: usize) -> Color32 {
+    let color = cpu_color(index);
+    Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 170)
 }
