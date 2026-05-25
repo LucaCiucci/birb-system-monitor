@@ -117,6 +117,13 @@ impl<'a> TabViewer for MyTabViewer<'a> {
     // This associated type is used to attach some data to each tab.
     type Tab = Tab;
 
+    fn id(&mut self, tab: &mut Self::Tab) -> egui::Id {
+        match tab {
+            Tab::Panel(id, uuid) => egui::Id::new((id.clone(), *uuid)),
+            Tab::Other(name) => egui::Id::new(name.clone()),
+        }
+    }
+
     // Returns the current `tab`'s title.
     fn title(&mut self, tab: &mut Self::Tab) -> WidgetText {
         match tab {
