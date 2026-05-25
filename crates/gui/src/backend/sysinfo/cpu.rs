@@ -1,7 +1,8 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use egui::{mutex::Mutex, Color32, Grid, ProgressBar, Stroke, WidgetText};
 use egui_plot::{AxisHints, Corner, FilledArea, Legend, Line, Plot, PlotPoints};
+use sysinfo::Pid;
 
 use crate::{backend::sysinfo::SysinfoSharedState, BackendPanel};
 
@@ -46,7 +47,12 @@ impl BackendPanel for CpuPanel {
             ui.checkbox(&mut self.show_per_cpu, "Per core");
         });
 
-        cpu_plot(ui, &data.data, self.show_per_cpu);
+        cpu_plot(
+            ui,
+            &data.data,
+            self.show_per_cpu,
+            &data.process_selection.selected_processes,
+        );
 
         ui.separator();
         ui.collapsing("CPU Cores", |ui| {
@@ -92,6 +98,7 @@ fn cpu_plot(
     ui: &mut egui::Ui,
     snapshots: &[crate::backend::sysinfo::SnapshotData],
     show_per_cpu: bool,
+    selected_processes: &HashSet<Pid>,
 ) {
     let Some(latest) = snapshots.last() else {
         return;
@@ -111,6 +118,7 @@ fn cpu_plot(
             ]
         })
         .collect();
+    let selected_points = selected_cpu_points(snapshots, latest, selected_processes);
 
     let plot = Plot::new("sysinfo_cpu_plot")
         .height(220.0)
@@ -164,7 +172,36 @@ fn cpu_plot(
         }
 
         plot_ui.line(Line::new("Total", points).color(Color32::WHITE));
+        if !selected_processes.is_empty() {
+            plot_ui.line(
+                Line::new("Selected", selected_points)
+                    .color(Color32::YELLOW)
+                    .width(3.0),
+            );
+        }
     });
+}
+
+fn selected_cpu_points(
+    snapshots: &[crate::backend::sysinfo::SnapshotData],
+    latest: &crate::backend::sysinfo::SnapshotData,
+    selected_processes: &HashSet<Pid>,
+) -> PlotPoints<'static> {
+    snapshots
+        .iter()
+        .map(|snapshot| {
+            let seconds_ago = latest
+                .captured_at
+                .duration_since(snapshot.captured_at)
+                .as_secs_f64();
+            let selected_usage = selected_processes
+                .iter()
+                .filter_map(|pid| snapshot.processes.get(pid))
+                .map(|process| process.cpu_usage as f64)
+                .sum::<f64>();
+            [seconds_ago, clamp_percent(selected_usage)]
+        })
+        .collect()
 }
 
 struct CpuLayer {

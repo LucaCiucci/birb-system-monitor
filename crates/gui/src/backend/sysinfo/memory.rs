@@ -1,8 +1,9 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use egui::{mutex::Mutex, Color32, ProgressBar, WidgetText};
 use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
 use human_units::FormatSize;
+use sysinfo::Pid;
 
 use crate::{
     backend::sysinfo::{SnapshotData, SysinfoSharedState},
@@ -62,7 +63,7 @@ impl BackendPanel for MemoryPanel {
                     .text(format!("Swap {:.1}%", swap_percent)),
             );
 
-            memory_plot(ui, &data.data);
+            memory_plot(ui, &data.data, &data.process_selection.selected_processes);
         } else {
             ui.label("Loading...");
         }
@@ -87,7 +88,7 @@ impl BackendPanel for MemoryPanel {
     }
 }
 
-fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData]) {
+fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], selected_processes: &HashSet<Pid>) {
     let Some(latest) = snapshots.last() else {
         return;
     };
@@ -125,6 +126,7 @@ fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData]) {
             ]
         })
         .collect();
+    let selected_points = selected_memory_points(snapshots, latest, selected_processes);
 
     Plot::new("sysinfo_memory_plot")
         .height(220.0)
@@ -149,7 +151,42 @@ fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData]) {
             plot_ui.set_plot_bounds_y(MIN_USAGE_PERCENT..=MAX_USAGE_PERCENT);
             plot_ui.line(Line::new("Memory", memory_points).color(Color32::LIGHT_BLUE));
             plot_ui.line(Line::new("Swap", swap_points).color(Color32::LIGHT_GREEN));
+            if !selected_processes.is_empty() {
+                plot_ui.line(
+                    Line::new("Selected", selected_points)
+                        .color(Color32::YELLOW)
+                        .width(3.0),
+                );
+            }
         });
+}
+
+fn selected_memory_points(
+    snapshots: &[SnapshotData],
+    latest: &SnapshotData,
+    selected_processes: &HashSet<Pid>,
+) -> PlotPoints<'static> {
+    snapshots
+        .iter()
+        .map(|snapshot| {
+            let seconds_ago = latest
+                .captured_at
+                .duration_since(snapshot.captured_at)
+                .as_secs_f64();
+            let selected_memory = selected_processes
+                .iter()
+                .filter_map(|pid| snapshot.processes.get(pid))
+                .map(|process| process.memory)
+                .sum::<u64>();
+            [
+                seconds_ago,
+                clamp_percent(percent(
+                    selected_memory,
+                    snapshot.general_stats.total_memory,
+                )),
+            ]
+        })
+        .collect()
 }
 
 fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData) -> f64 {
