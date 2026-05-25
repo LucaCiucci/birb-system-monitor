@@ -5,18 +5,22 @@ use std::{
     time::{Duration, Instant},
 };
 
-use egui::{WidgetText, mutex::Mutex};
+use egui::{mutex::Mutex, WidgetText};
 use sysinfo::{DiskUsage, Gid, Pid, ProcessesToUpdate, System, Uid};
 use ustr::Ustr;
 
 use crate::{
+    backend::sysinfo::{
+        cpu::CpuPanel, memory::MemoryPanel, proc_list::ProcessesPanel,
+        selected_process::SelectedProcessPanel,
+    },
     Backend, BackendPanel, BackendPanelId, BackendPanelInfo,
-    backend::sysinfo::{cpu::CpuPanel, memory::MemoryPanel, proc_list::ProcessesPanel},
 };
 
 mod cpu;
 mod memory;
 mod proc_list;
+mod selected_process;
 
 const MAX_HISTORY_SNAPSHOTS: usize = 600;
 
@@ -73,6 +77,11 @@ impl Backend for SysinfoBackend {
                 title: "Processes".into(),
                 description: "Shows process information".into(),
             },
+            BackendPanelInfo {
+                id: BackendPanelId("selected-process".into()),
+                title: "Selected Process".into(),
+                description: "Shows details for a selected process".into(),
+            },
         ]
     }
 
@@ -81,6 +90,7 @@ impl Backend for SysinfoBackend {
             "cpu" => Box::new(CpuPanel::new(self.state.clone())),
             "memory" => Box::new(MemoryPanel::new(self.state.clone())),
             "processes" => Box::new(ProcessesPanel::new(self.state.clone())),
+            "selected-process" => Box::new(SelectedProcessPanel::new(self.state.clone())),
             _ => panic!("Unknown panel id: {}", panel_id.0),
         }
     }

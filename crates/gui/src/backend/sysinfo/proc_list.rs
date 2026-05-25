@@ -1,13 +1,18 @@
 use std::{ops::Not, sync::Arc};
 
-use egui::{Align, Button, Checkbox, Color32, ComboBox, Layout, RichText, Sense, Ui, WidgetText, mutex::Mutex};
+use egui::{
+    mutex::Mutex, Align, Button, Checkbox, Color32, ComboBox, Layout, RichText, Sense, Ui,
+    WidgetText,
+};
 use egui_extras::{Column, TableBuilder};
 use human_units::{FormatDuration, FormatSize};
 use serde::{Deserialize, Serialize};
 use sysinfo::Pid;
 
-use crate::{BackendPanel, backend::sysinfo::{ProcessSnapshot, SnapshotData, SysinfoSharedState}};
-
+use crate::{
+    backend::sysinfo::{ProcessSnapshot, SnapshotData, SysinfoSharedState},
+    BackendPanel,
+};
 
 pub(super) struct ProcessesPanel {
     config: Config,
@@ -41,7 +46,10 @@ impl Default for Config {
 
 impl ProcessesPanel {
     pub fn new(state: Arc<Mutex<SysinfoSharedState>>) -> Self {
-        Self { config: Config::default(), state }
+        Self {
+            config: Config::default(),
+            state,
+        }
     }
 }
 
@@ -69,7 +77,10 @@ impl BackendPanel for ProcessesPanel {
         ui.horizontal(|ui| {
             ui.add(Checkbox::new(&mut self.config.show_threads, "Show threads"));
             if ui
-                .add(Checkbox::new(&mut state.process_selection.multiple_selection, "Multiple selection"))
+                .add(Checkbox::new(
+                    &mut state.process_selection.multiple_selection,
+                    "Multiple selection",
+                ))
                 .changed()
                 && !state.process_selection.multiple_selection
             {
@@ -78,39 +89,53 @@ impl BackendPanel for ProcessesPanel {
             if ui.button("Clear selection").clicked() {
                 state.process_selection.clear();
             }
-            ui.label(format!("{} selected", state.process_selection.selected_processes.len()));
+            ui.label(format!(
+                "{} selected",
+                state.process_selection.selected_processes.len()
+            ));
         });
         ui.horizontal(|ui| {
             ui.label("Filter:");
             ui.text_edit_singleline(&mut self.config.filter);
             ui.label(format!("{} / {}", pids.len(), process_count));
         });
-        ui.collapsing("columns", |ui| ui.vertical(|ui| {
-            for column in self.config.columns.clone() {
-                ui.horizontal(|ui| {
-                    ui.label(column.text());
-                    if ui.add(Button::new("-").fill(Color32::DARK_RED)).clicked() {
-                        self.config.columns.retain(|c| c != &column);
-                    }
-                });
-            }
-            ui.horizontal(|ui| {
-                ComboBox::from_label("Add column")
-                    .selected_text("Add column")
-                    .show_ui(ui, |ui| {
-                        for column in &[ProcessColumn::Pid, ProcessColumn::Name, ProcessColumn::CpuUsage, ProcessColumn::CpuTime, ProcessColumn::MemoryUsage] {
-                            if self.config.columns.contains(column) {
-                                continue;
-                            }
-                            if ui.button(column.text()).clicked() {
-                                self.config.columns.push(*column);
-                            }
+        ui.collapsing("columns", |ui| {
+            ui.vertical(|ui| {
+                for column in self.config.columns.clone() {
+                    ui.horizontal(|ui| {
+                        ui.label(column.text());
+                        if ui.add(Button::new("-").fill(Color32::DARK_RED)).clicked() {
+                            self.config.columns.retain(|c| c != &column);
                         }
                     });
+                }
+                ui.horizontal(|ui| {
+                    ComboBox::from_label("Add column")
+                        .selected_text("Add column")
+                        .show_ui(ui, |ui| {
+                            for column in &[
+                                ProcessColumn::Pid,
+                                ProcessColumn::Name,
+                                ProcessColumn::CpuUsage,
+                                ProcessColumn::CpuTime,
+                                ProcessColumn::MemoryUsage,
+                            ] {
+                                if self.config.columns.contains(column) {
+                                    continue;
+                                }
+                                if ui.button(column.text()).clicked() {
+                                    self.config.columns.push(*column);
+                                }
+                            }
+                        });
+                })
             })
-        }));
+        });
         let clicked_pid = {
-            let data = state.data.last().expect("snapshot disappeared while rendering");
+            let data = state
+                .data
+                .last()
+                .expect("snapshot disappeared while rendering");
             self.table(data, ui, &pids, &state.process_selection.selected_processes)
         };
         if let Some(clicked_pid) = clicked_pid {
@@ -132,7 +157,10 @@ impl ProcessesPanel {
             pids.retain(|pid| {
                 let process = &data.processes[pid];
                 process.name.contains(&self.config.filter)
-                    || process.cmd.iter().any(|arg| arg.contains(&self.config.filter))
+                    || process
+                        .cmd
+                        .iter()
+                        .any(|arg| arg.contains(&self.config.filter))
             });
         }
         pids.sort();
@@ -145,10 +173,20 @@ impl ProcessesPanel {
                 pids.sort_by_key(|pid| data.processes[pid].name.clone());
             }
             ProcessColumn::CpuUsage => {
-                pids.sort_by(|a, b| data.processes[b].cpu_usage.partial_cmp(&data.processes[a].cpu_usage).unwrap());
+                pids.sort_by(|a, b| {
+                    data.processes[b]
+                        .cpu_usage
+                        .partial_cmp(&data.processes[a].cpu_usage)
+                        .unwrap()
+                });
             }
             ProcessColumn::CpuTime => {
-                pids.sort_by(|a, b| data.processes[b].accumulated_cpu_time.partial_cmp(&data.processes[a].accumulated_cpu_time).unwrap());
+                pids.sort_by(|a, b| {
+                    data.processes[b]
+                        .accumulated_cpu_time
+                        .partial_cmp(&data.processes[a].accumulated_cpu_time)
+                        .unwrap()
+                });
             }
             ProcessColumn::MemoryUsage => {
                 pids.sort_by_key(|pid| data.processes[pid].memory);
@@ -271,7 +309,12 @@ impl ProcessColumn {
         }
     }
 
-    fn show_header(&self, ui: &mut Ui, sort_by: &mut ProcessColumn, sorted: Option<&mut SortDirection>) {
+    fn show_header(
+        &self,
+        ui: &mut Ui,
+        sort_by: &mut ProcessColumn,
+        sorted: Option<&mut SortDirection>,
+    ) {
         let text = RichText::new(self.text()).strong();
         if ui.label(text).clicked() {
             *sort_by = *self;
@@ -279,7 +322,7 @@ impl ProcessColumn {
 
         if let Some(direction) = sorted {
             let symbol = match direction {
-                SortDirection::Ascending => "⬆", // "▲⬆"
+                SortDirection::Ascending => "⬆",  // "▲⬆"
                 SortDirection::Descending => "⬇", // "▼⬇"
             };
             if ui.label(symbol).clicked() {
@@ -300,7 +343,10 @@ impl ProcessColumn {
                 ui.label(format!("{:.1}%", process.cpu_usage));
             }
             ProcessColumn::CpuTime => {
-                ui.label(format!("{:.1}s", process.accumulated_cpu_time.format_duration()));
+                ui.label(format!(
+                    "{:.1}s",
+                    process.accumulated_cpu_time.format_duration()
+                ));
             }
             ProcessColumn::MemoryUsage => {
                 ui.label(format!("{}", process.memory.format_size()));
