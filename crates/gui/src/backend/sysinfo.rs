@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
     thread::JoinHandle,
     time::{Duration, Instant},
@@ -102,6 +102,7 @@ impl Default for SysinfoConfig {
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SysinfoSharedState {
     config: SysinfoConfig,
+    process_selection: ProcessSelection,
     data: Vec<SnapshotData>,
     cx: egui::Context,
     should_stop: bool,
@@ -111,9 +112,44 @@ impl SysinfoSharedState {
     fn new(cx: egui::Context) -> Self {
         Self {
             config: Default::default(),
+            process_selection: Default::default(),
             data: Vec::new(),
             cx,
             should_stop: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct ProcessSelection {
+    pub(super) selected_processes: HashSet<Pid>,
+    pub(super) multiple_selection: bool,
+}
+
+impl ProcessSelection {
+    pub(super) fn select_process(&mut self, pid: Pid) {
+        if self.multiple_selection {
+            if !self.selected_processes.insert(pid) {
+                self.selected_processes.remove(&pid);
+            }
+        } else {
+            self.selected_processes.clear();
+            self.selected_processes.insert(pid);
+        }
+    }
+
+    pub(super) fn clear(&mut self) {
+        self.selected_processes.clear();
+    }
+
+    pub(super) fn retain_existing_pids(&mut self, pids: &HashSet<Pid>) {
+        self.selected_processes.retain(|pid| pids.contains(pid));
+    }
+
+    pub(super) fn retain_single_selection(&mut self) {
+        if let Some(pid) = self.selected_processes.iter().next().copied() {
+            self.selected_processes.clear();
+            self.selected_processes.insert(pid);
         }
     }
 }

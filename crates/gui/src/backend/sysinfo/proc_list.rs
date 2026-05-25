@@ -51,20 +51,39 @@ impl BackendPanel for ProcessesPanel {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui) {
-        let data = self.state.clone();
-        let data = data.lock();
-        let Some(data) = data.data.last() else {
-            ui.label("Loading...");
-            return;
+        let state = self.state.clone();
+        let mut state = state.lock();
+        let (pids, existing_pids, process_count) = {
+            let Some(data) = state.data.last() else {
+                ui.label("Loading...");
+                return;
+            };
+            (
+                self.list_pids(data),
+                data.processes.keys().copied().collect(),
+                data.processes.len(),
+            )
         };
+        state.process_selection.retain_existing_pids(&existing_pids);
 
-        let pids = self.list_pids(data);
-
-        ui.add(Checkbox::new(&mut self.config.show_threads, "Show threads"));
+        ui.horizontal(|ui| {
+            ui.add(Checkbox::new(&mut self.config.show_threads, "Show threads"));
+            if ui
+                .add(Checkbox::new(&mut state.process_selection.multiple_selection, "Multiple selection"))
+                .changed()
+                && !state.process_selection.multiple_selection
+            {
+                state.process_selection.retain_single_selection();
+            }
+            if ui.button("Clear selection").clicked() {
+                state.process_selection.clear();
+            }
+            ui.label(format!("{} selected", state.process_selection.selected_processes.len()));
+        });
         ui.horizontal(|ui| {
             ui.label("Filter:");
             ui.text_edit_singleline(&mut self.config.filter);
-            ui.label(format!("{} / {}", pids.len(), data.processes.len()));
+            ui.label(format!("{} / {}", pids.len(), process_count));
         });
         ui.collapsing("columns", |ui| ui.vertical(|ui| {
             for column in self.config.columns.clone() {
@@ -90,7 +109,13 @@ impl BackendPanel for ProcessesPanel {
                     });
             })
         }));
-        self.table(data, ui, &pids);
+        let clicked_pid = {
+            let data = state.data.last().expect("snapshot disappeared while rendering");
+            self.table(data, ui, &pids, &state.process_selection.selected_processes)
+        };
+        if let Some(clicked_pid) = clicked_pid {
+            state.process_selection.select_process(clicked_pid);
+        }
     }
 }
 
@@ -142,7 +167,8 @@ impl ProcessesPanel {
         data: &SnapshotData,
         ui: &mut Ui,
         pids: &[Pid],
-    ) {
+        selected_processes: &std::collections::HashSet<Pid>,
+    ) -> Option<Pid> {
         let available_height = ui.available_height();
         let text_height = egui::TextStyle::Body
             .resolve(ui.style())
@@ -167,6 +193,8 @@ impl ProcessesPanel {
             });
         }
 
+        let mut clicked_pid = None;
+
         table
             .min_scrolled_height(0.0)
             .max_scroll_height(available_height)
@@ -188,13 +216,21 @@ impl ProcessesPanel {
                     let i = row.index();
                     let pid = pids[i];
                     let process = &data.processes[&pid];
+                    let selected = selected_processes.contains(&pid);
+                    row.set_selected(selected);
+                    let mut clicked = false;
                     for column in &self.config.columns {
-                        row.col(|ui| {
+                        let (_, response) = row.col(|ui| {
                             column.show(process, ui);
                         });
+                        clicked |= response.clicked();
+                    }
+                    if clicked {
+                        clicked_pid = Some(pid);
                     }
                 });
             });
+        clicked_pid
     }
 }
 
