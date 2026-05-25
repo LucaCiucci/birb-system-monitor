@@ -54,9 +54,8 @@ impl BackendPanel for SelectedProcessPanel {
             if selected_pids.is_empty() {
                 (selected_pids, None)
             } else {
-                self.selected_index = self.selected_index.min(selected_pids.len() - 1);
-                let pid = selected_pids[self.selected_index];
-                (selected_pids, data.processes.get(&pid).cloned())
+                let p = selected_pids.get(self.selected_index).and_then(|pid| data.processes.get(&pid).cloned());
+                (selected_pids, p)
             }
         };
 
@@ -71,14 +70,13 @@ impl BackendPanel for SelectedProcessPanel {
             if ui
                 .add(
                     egui::DragValue::new(&mut index)
-                        .range(1..=selected_pids.len())
+                        .range(1..=100)
                         .speed(1),
                 )
                 .changed()
             {
-                self.selected_index = index.saturating_sub(1).min(selected_pids.len() - 1);
+                self.selected_index = index.saturating_sub(1);
             }
-            ui.label(format!("of {}", selected_pids.len()));
         });
 
         let Some(process) = process else {
