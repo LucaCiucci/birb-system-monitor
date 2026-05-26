@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Duration};
 
-use birb_system_monitor_gui::{Backend, BackendId, BackendPanel, PanelId, backend::init_all_backends, save::Profile, tabs::{Tab, default_dock_state}};
+use crate::{Backend, BackendId, BackendPanel, PanelId, backend::init_all_backends, save::Profile, tabs::{Tab, default_dock_state}};
 use eframe::egui;
 use egui::{Button, Color32, Id, MenuBar, Ui, Vec2, WidgetText, accesskit::Uuid};
 use egui_dock::{DockArea, TabViewer};
@@ -8,9 +8,7 @@ use itertools::Itertools;
 use ordered_hash_map::OrderedHashMap;
 use tracing::info;
 
-fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
-
+pub fn main() -> anyhow::Result<()> {
     let app_id = env!("CARGO_PKG_NAME");
 
     let mut native_options = eframe::NativeOptions::default();

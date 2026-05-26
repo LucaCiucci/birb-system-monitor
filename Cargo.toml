@@ -3,9 +3,6 @@ resolver = "3"
 members = [
     "crates/gui"
 ]
-default-members = [
-    "crates/gui"
-]
 
 [workspace.package]
 edition = "2024"
@@ -14,3 +11,17 @@ license = "MIT"
 authors = [
     "Luca Ciucci"
 ]
+
+[package]
+name = "birb-monitor"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow = "1.0.102"
+birb-system-monitor-gui = { path = "crates/gui" }
+clap = { version = "4.6.1", features = ["derive"] }
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
