@@ -1,6 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use egui::{Color32, ProgressBar, Stroke, Ui, WidgetText, mutex::Mutex};
+use egui_extras::{Column, TableBuilder};
 use egui_plot::{Corner, FilledArea, Legend, Line, Plot, PlotPoints};
 use human_units::FormatSize;
 use sysinfo::Pid;
@@ -39,72 +40,113 @@ impl BackendPanel for DashboardPanel {
 
         // Determine number of columns based on available width
         let available_width = ui.available_width();
-        let min_col_width = 320.0;
-        let max_cols = (available_width / min_col_width).floor() as usize;
-        let cols = max_cols.max(1).min(2); // Max 2 columns for readability
+        let cols = ((available_width / 320.0).floor() as usize).max(1).min(2); // Max 2 columns
 
-        // -- Summary bar --
-        ui.horizontal(|ui| {
-            ui.label(format!(
-                "CPU: {:.1}%  |  Memory: {} / {} ({:.1}%)  |  Swap: {} / {} ({:.1}%)",
-                latest.cpu_stats.global_usage,
-                latest.general_stats.used_memory.format_size(),
-                latest.general_stats.total_memory.format_size(),
-                percent(latest.general_stats.used_memory, latest.general_stats.total_memory),
-                latest.general_stats.used_swap.format_size(),
-                latest.general_stats.total_swap.format_size(),
-                percent(latest.general_stats.used_swap, latest.general_stats.total_swap),
-            ));
-        });
-
-        ui.separator();
-
-        // Compute dynamic height for mini plots based on available space.
-        // The remaining elements after the grid are: separator + per-core bars (~35px) + settings.
-        // Settings is collapsing, so when closed it's ~25px, when open it can grow.
-        // We target filling available height without scrolling.
-        let rows = if cols >= 2 { 2 } else { 4 };
-        let remaining_after_grid = 70.0; // separator + core bars + settings header estimate
-        let mini_plot_height = ((ui.available_height() - remaining_after_grid) / rows as f32)
-            .clamp(80.0, 250.0);
-
-        // -- Responsive grid of mini graphs --
-        egui::Grid::new("dashboard_grid")
-            .num_columns(cols)
-            .min_col_width(min_col_width)
-            .spacing([8.0, 8.0])
+        // -- Summary grid (CPU, Memory, Swap) --
+        egui::Grid::new("dashboard_summary")
+            .num_columns(3)
+            .striped(true)
+            .spacing([16.0, 4.0])
             .show(ui, |ui| {
-                // CPU
-                mini_cpu_plot(ui, latest, &data.data, &data.process_selection.selected_processes, mini_plot_height);
-                if cols >= 2 { ui.end_row(); }
+                // CPU row
+                ui.label(format!("CPU: {:.1}%", latest.cpu_stats.global_usage));
+                ui.add(
+                    ProgressBar::new((latest.cpu_stats.global_usage / 100.0).clamp(0.0, 1.0))
+                        .desired_width(120.0)
+                        .text(format!("{:.1}%", latest.cpu_stats.global_usage)),
+                );
+                ui.end_row();
 
-                // Memory
-                mini_memory_plot(ui, latest, &data.data, &data.process_selection.selected_processes, mini_plot_height);
-                if cols >= 2 { ui.end_row(); }
+                // Memory row
+                ui.label(format!(
+                    "Memory: {} / {}",
+                    latest.general_stats.used_memory.format_size(),
+                    latest.general_stats.total_memory.format_size(),
+                ));
+                let memory_percent = percent(latest.general_stats.used_memory, latest.general_stats.total_memory);
+                ui.add(
+                    ProgressBar::new(memory_percent as f32 / 100.0)
+                        .desired_width(120.0)
+                        .text(format!("{:.1}%", memory_percent)),
+                );
+                ui.end_row();
 
-                // Network
-                mini_network_plot(ui, latest, &data.data, mini_plot_height);
-                if cols >= 2 { ui.end_row(); }
-
-                // Disk I/O
-                mini_disk_io_plot(ui, latest, &data.data, mini_plot_height);
-                if cols >= 2 { ui.end_row(); }
+                // Swap row
+                ui.label(format!(
+                    "Swap: {} / {}",
+                    latest.general_stats.used_swap.format_size(),
+                    latest.general_stats.total_swap.format_size(),
+                ));
+                let swap_percent = percent(latest.general_stats.used_swap, latest.general_stats.total_swap);
+                ui.add(
+                    ProgressBar::new(swap_percent as f32 / 100.0)
+                        .desired_width(120.0)
+                        .text(format!("{:.1}%", swap_percent)),
+                );
+                ui.end_row();
             });
 
         ui.separator();
 
-        // Compact per-core bars
-        ui.horizontal_wrapped(|ui| {
-            ui.label("Cores:");
-            for (i, usage) in latest.cpu_stats.per_cpu_usage.iter().enumerate() {
-                let color = cpu_bar_color(*usage);
-                let bar = ProgressBar::new((*usage / 100.0).clamp(0.0, 1.0))
-                    .desired_width(60.0)
-                    .fill(color)
-                    .text(format!("CPU{i} {usage:.0}%"));
-                ui.add(bar);
-            }
-        });
+        // Compute dynamic height for mini plots based on remaining space.
+        // Remaining items after the plots: separator + per-core bars (~40px total).
+        let plot_rows = if cols >= 2 { 2 } else { 4 };
+        let plot_area = (ui.available_height() - 40.0).max(0.0);
+        let mini_plot_height = (plot_area / plot_rows as f32 - 20.0).clamp(80.0, 250.0);
+
+        // -- Responsive grid of mini graphs (equal-width columns via Column::remainder) --
+        let row_height = mini_plot_height + 20.0; // plot + label
+        TableBuilder::new(ui)
+            .columns(Column::remainder(), cols)
+            .striped(false)
+            .cell_layout(egui::Layout::top_down_justified(egui::Align::LEFT))
+            .body(|mut body| {
+                // Row 1
+                body.row(row_height, |mut row| {
+                    row.col(|ui| {
+                        mini_cpu_plot(ui, latest, &data.data, &data.process_selection.selected_processes, mini_plot_height);
+                    });
+                    if cols >= 2 {
+                        row.col(|ui| {
+                            mini_memory_plot(ui, latest, &data.data, &data.process_selection.selected_processes, mini_plot_height);
+                        });
+                    }
+                });
+                // Row 2
+                body.row(row_height, |mut row| {
+                    row.col(|ui| {
+                        mini_network_plot(ui, latest, &data.data, mini_plot_height);
+                    });
+                    if cols >= 2 {
+                        row.col(|ui| {
+                            mini_disk_io_plot(ui, latest, &data.data, mini_plot_height);
+                        });
+                    }
+                });
+            });
+
+        ui.separator();
+
+        // Compact per-core bars in a grid
+        let total_cores = latest.cpu_stats.per_cpu_usage.len();
+        let core_cols = total_cores.min(8); // up to 8 per row
+        egui::Grid::new("dashboard_cores")
+            .num_columns(core_cols)
+            .spacing([6.0, 4.0])
+            .show(ui, |ui| {
+                for (i, usage) in latest.cpu_stats.per_cpu_usage.iter().enumerate() {
+                    let color = cpu_bar_color(*usage);
+                    ui.add(
+                        ProgressBar::new((*usage / 100.0).clamp(0.0, 1.0))
+                            .desired_width(60.0)
+                            .fill(color)
+                            .text(format!("CPU{i} {usage:.0}%")),
+                    );
+                    if (i + 1) % core_cols == 0 {
+                        ui.end_row();
+                    }
+                }
+            });
 
     }
 }
