@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use birb_system_monitor_gui::{Backend, BackendId, BackendPanel, PanelId, backend::sysinfo::SysinfoBackend, tabs::{Tab, default_dock_state}};
+use birb_system_monitor_gui::{Backend, BackendId, BackendPanel, PanelId, backend::init_all_backends, tabs::{Tab, default_dock_state}};
 use eframe::egui;
 use egui::{MenuBar, Ui, WidgetText, accesskit::Uuid};
 use egui_dock::{DockArea, TabViewer};
@@ -30,12 +30,7 @@ impl MonitorApp {
             .and_then(|dock_json| serde_json::from_str(&dock_json).ok())
             .unwrap_or_else(|| default_dock_state());
 
-        let mut backends = HashMap::<BackendId, Box<dyn Backend>>::default();
-
-        backends.insert(
-            BackendId("sysinfo".into()),
-            Box::new(SysinfoBackend::new(_cc.egui_ctx.clone())),
-        );
+        let backends = init_all_backends(&_cc.egui_ctx);
 
         Self { backends, panels: HashMap::default(), dock_state }
     }

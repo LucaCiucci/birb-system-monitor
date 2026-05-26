@@ -6,6 +6,7 @@ use ecow::EcoString;
 use egui::{Ui, WidgetText};
 use serde::{Deserialize, Serialize};
 pub mod tabs;
+pub mod widgets;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PanelId {
