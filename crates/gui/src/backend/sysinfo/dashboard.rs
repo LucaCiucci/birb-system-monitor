@@ -437,14 +437,26 @@ fn mini_temperature_chart(ui: &mut Ui, latest: &SnapshotData, snapshots: &[Snaps
                         })
                         .collect();
 
+                    let truncated = truncate_label(&component.label);
                     plot_ui.line(
-                        Line::new(&component.label, points)
+                        Line::new(truncated, points)
                             .color(temp_line_color(i))
                             .width(1.5),
                     );
                 }
             });
     });
+}
+
+fn truncate_label(label: &str) -> String {
+    const MAX_LEN: usize = 22;
+    if label.len() > MAX_LEN {
+        let mut s = label.chars().take(MAX_LEN.saturating_sub(1)).collect::<String>();
+        s.push('…');
+        s
+    } else {
+        label.to_string()
+    }
 }
 
 // ── Helper functions ──
