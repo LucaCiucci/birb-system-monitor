@@ -65,7 +65,28 @@ impl MonitorApp {
             }
         }
 
-        Self { loaded_profile, backends, panels: HashMap::default(), dock_states, selected_tab: "main".into() }
+        // Eagerly create all panels from saved dock layout so configs are loaded
+        // even for panels in tabs that haven't been viewed yet.
+        let mut panels: HashMap<(PanelId, Uuid), Box<dyn BackendPanel>> = HashMap::new();
+        for dock_state in dock_states.values() {
+            for (_path, tab) in dock_state.iter_all_tabs() {
+                if let Tab::Panel(panel_id, uuid) = tab {
+                    if let Some(backend) = backends.get(&panel_id.backend) {
+                        let mut panel = backend.new_panel(&panel_id.panel);
+                        if let Some(config) = loaded_profile.as_ref().and_then(|p| {
+                            p.get_panel_config(&panel_id.backend, &panel_id.panel, uuid)
+                        }) {
+                            if let Err(e) = panel.load_config(config) {
+                                eprintln!("Failed to load config for panel {}: {:?}", panel_id, e);
+                            }
+                        }
+                        panels.insert((panel_id.clone(), *uuid), panel);
+                    }
+                }
+            }
+        }
+
+        Self { loaded_profile, backends, panels, dock_states, selected_tab: "main".into() }
     }
 
     fn menu(&mut self, ui: &mut Ui) {
