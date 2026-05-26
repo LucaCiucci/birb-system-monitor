@@ -44,9 +44,6 @@ impl MonitorApp {
     }
 
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let s = _cc.storage.unwrap().get_string("profile").unwrap_or_default();
-        eprintln!("Loaded profile string: {s}");
-
         let loaded_profile: Option<Profile> = _cc.storage
             .and_then(|storage| storage.get_string("profile"))
             .and_then(|profile_json| serde_json::from_str(&profile_json).map_err(|e| {
@@ -54,8 +51,6 @@ impl MonitorApp {
                 eprintln!("Profile JSON was: {profile_json}");
                 e
             }).ok());
-
-        eprintln!("Loaded profile: {:#?}", loaded_profile);
 
         let dock_state = loaded_profile.as_ref().map(|p| p.dock_state.clone()).unwrap_or_else(default_dock_state);
 
