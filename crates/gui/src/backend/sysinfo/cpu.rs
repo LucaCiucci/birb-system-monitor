@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc};
 
 use egui::{mutex::Mutex, Color32, Grid, ProgressBar, Stroke, WidgetText};
 use egui_plot::{AxisHints, Corner, FilledArea, Legend, Line, Plot, PlotPoints};
@@ -91,23 +91,6 @@ impl BackendPanel for CpuPanel {
                 });
         });
 
-        ui.collapsing("Settings", |ui| {
-            let mut config = data.config.clone();
-            ui.horizontal(|ui| {
-                ui.label("Update interval:");
-                let mut interval_secs = config.update_interval.as_secs_f32();
-                if ui
-                    .add(egui::Slider::new(&mut interval_secs, 0.05..=5.0).logarithmic(true))
-                    .changed()
-                {
-                    config.update_interval = Duration::from_secs_f32(interval_secs);
-                }
-            });
-            if config != data.config {
-                drop(data);
-                self.state.lock().config = config;
-            }
-        });
     }
 
     fn save_config(&self) -> anyhow::Result<serde_json::Value> {

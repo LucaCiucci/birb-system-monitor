@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use egui::{Color32, WidgetText, mutex::Mutex};
 use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
@@ -49,23 +49,6 @@ impl BackendPanel for DiskIoPanel {
             ui.label("Loading...");
         }
 
-        ui.collapsing("Settings", |ui| {
-            let mut config = data.config.clone();
-            ui.horizontal(|ui| {
-                ui.label("Update interval:");
-                let mut interval_secs = config.update_interval.as_secs_f32();
-                if ui
-                    .add(egui::Slider::new(&mut interval_secs, 0.05..=5.0).logarithmic(true))
-                    .changed()
-                {
-                    config.update_interval = Duration::from_secs_f32(interval_secs);
-                }
-            });
-            if config != data.config {
-                drop(data);
-                self.state.lock().config = config;
-            }
-        });
     }
 }
 

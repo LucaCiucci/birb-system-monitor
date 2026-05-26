@@ -14,7 +14,7 @@ use crate::{
     backend::sysinfo::{
         cpu::CpuPanel, dashboard::DashboardPanel, disk_io::DiskIoPanel,
         memory::MemoryPanel, network::NetworkPanel, proc_list::ProcessesPanel,
-        selected_process::SelectedProcessPanel,
+        selected_process::SelectedProcessPanel, settings::SettingsPanel,
     },
     Backend, BackendPanel, BackendPanelId, BackendPanelInfo,
 };
@@ -26,6 +26,7 @@ mod memory;
 mod network;
 mod proc_list;
 mod selected_process;
+mod settings;
 
 const MAX_HISTORY_SNAPSHOTS: usize = 600;
 
@@ -111,6 +112,11 @@ impl Backend for SysinfoBackend {
                 title: "Dashboard".into(),
                 description: "Shows all graphs in a responsive grid".into(),
             },
+            BackendPanelInfo {
+                id: BackendPanelId("settings".into()),
+                title: "Sysinfo Settings".into(),
+                description: "Configure sysinfo backend settings".into(),
+            },
         ]
     }
 
@@ -123,6 +129,7 @@ impl Backend for SysinfoBackend {
             "network" => Box::new(NetworkPanel::new(self.state.clone())),
             "disk-io" => Box::new(DiskIoPanel::new(self.state.clone())),
             "dashboard" => Box::new(DashboardPanel::new(self.state.clone())),
+            "settings" => Box::new(SettingsPanel::new(self.state.clone())),
             _ => panic!("Unknown panel id: {}", panel_id.0),
         }
     }
