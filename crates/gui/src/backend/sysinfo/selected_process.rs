@@ -3,9 +3,10 @@ use std::{collections::HashSet, fmt::Display, sync::Arc};
 use egui::{mutex::Mutex, Grid, RichText, WidgetText};
 use human_units::{FormatDuration, FormatSize};
 use serde::{Deserialize, Serialize};
+use sysinfo::Pid;
 
 use crate::{
-    backend::sysinfo::{ProcessSnapshot, SysinfoSharedState},
+    backend::sysinfo::{ProcessDetail, ProcessMetrics, SysinfoSharedState},
     BackendPanel,
 };
 
@@ -40,41 +41,43 @@ impl BackendPanel for SelectedProcessPanel {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui) {
-        let (selected_pids, process) = {
-            let mut state = self.state.lock();
-            let Some(data) = state.data.last() else {
-                ui.label("Loading...");
-                return;
-            };
-
-            let existing_pids = data.processes.keys().copied().collect::<HashSet<_>>();
-            state.process_selection.retain_existing_pids(&existing_pids);
-
-            let Some(data) = state.data.last() else {
-                ui.label("Loading...");
-                return;
-            };
-            let mut selected_pids = state
-                .process_selection
-                .selected_processes
-                .iter()
-                .copied()
-                .filter(|pid| data.processes.contains_key(pid))
-                .collect::<Vec<_>>();
-            selected_pids.sort();
-
-            if selected_pids.is_empty() {
-                (selected_pids, None)
-            } else {
-                let p = selected_pids.get(self.config.selected_index).and_then(|pid| data.processes.get(&pid).cloned());
-                (selected_pids, p)
-            }
+        let state = self.state.lock();
+        let Some(_) = state.data.last() else {
+            ui.label("Loading...");
+            return;
         };
 
+        let existing_pids: HashSet<Pid> = state.process_info.keys().copied().collect();
+        drop(state);
+        let mut state = self.state.lock();
+        state.process_selection.retain_existing_pids(&existing_pids);
+
+        let mut selected_pids: Vec<Pid> = state
+            .process_selection
+            .selected_processes
+            .iter()
+            .copied()
+            .filter(|pid| state.process_info.contains_key(pid))
+            .collect();
+        selected_pids.sort();
+
         if selected_pids.is_empty() {
+            drop(state);
             ui.label("No selected process.");
             return;
         }
+
+        let Some(pid) = selected_pids.get(self.config.selected_index).copied() else {
+            drop(state);
+            ui.label("No selected process.");
+            return;
+        };
+
+        let Some(info) = state.process_info.get(&pid) else {
+            drop(state);
+            ui.label("Selected process not found.");
+            return;
+        };
 
         ui.horizontal(|ui| {
             ui.label("Selected index:");
@@ -91,12 +94,8 @@ impl BackendPanel for SelectedProcessPanel {
             }
         });
 
-        let Some(process) = process else {
-            ui.label("Selected process is not present in the latest snapshot.");
-            return;
-        };
-
-        process_summary(ui, &process);
+        let latest_metrics = info.metrics.back().copied().unwrap_or_default();
+        process_summary(ui, &info.detail, &latest_metrics);
     }
 
     fn save_config(&self) -> anyhow::Result<serde_json::Value> {
@@ -109,15 +108,15 @@ impl BackendPanel for SelectedProcessPanel {
     }
 }
 
-fn process_summary(ui: &mut egui::Ui, process: &ProcessSnapshot) {
+fn process_summary(ui: &mut egui::Ui, detail: &ProcessDetail, metrics: &ProcessMetrics) {
     ui.separator();
-    ui.heading(process.name.as_str());
+    ui.heading(detail.name.as_str());
 
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new(format!("PID {}", process.pid)).strong());
-        ui.label(format!("CPU {:.1}%", process.cpu_usage));
-        ui.label(format!("Memory {}", process.memory.format_size()));
-        if let Some(thread_kind) = process.thread_kind {
+        ui.label(RichText::new(format!("PID {}", detail.pid)).strong());
+        ui.label(format!("CPU {:.1}%", metrics.cpu_usage));
+        ui.label(format!("Memory {}", metrics.memory.format_size()));
+        if let Some(thread_kind) = detail.thread_kind {
             ui.label(format!("Thread: {thread_kind:?}"));
         }
     });
@@ -130,25 +129,25 @@ fn process_summary(ui: &mut egui::Ui, process: &ProcessSnapshot) {
         .striped(true)
         .spacing([16.0, 6.0])
         .show(ui, |ui| {
-            value_row(ui, "Name", process.name.as_str());
-            value_row(ui, "PID", process.pid);
-            value_row(ui, "CPU usage", &format!("{:.1}%", process.cpu_usage));
+            value_row(ui, "Name", detail.name.as_str());
+            value_row(ui, "PID", detail.pid);
+            value_row(ui, "CPU usage", &format!("{:.1}%", metrics.cpu_usage));
             value_row(
                 ui,
                 "CPU time",
-                &format!("{}", process.accumulated_cpu_time.format_duration()),
+                &format!("{}", detail.accumulated_cpu_time.format_duration()),
             );
-            value_row(ui, "Memory", process.memory.format_size());
-            value_row(ui, "Virtual memory", process.virtual_memory.format_size());
+            value_row(ui, "Memory", metrics.memory.format_size());
+            value_row(ui, "Virtual memory", metrics.virtual_memory.format_size());
             value_row(
                 ui,
                 "Current directory",
-                option_text(process.cwd.as_deref()).as_str(),
+                option_text(detail.cwd.as_deref()).as_str(),
             );
             value_row(
                 ui,
                 "Effective user",
-                &process
+                &detail
                     .effective_user_id
                     .as_ref()
                     .map(|id| format!("{id:?}"))
@@ -157,33 +156,33 @@ fn process_summary(ui: &mut egui::Ui, process: &ProcessSnapshot) {
             value_row(
                 ui,
                 "Effective group",
-                &process
+                &detail
                     .effective_group_id
                     .as_ref()
                     .map(|id| format!("{id:?}"))
                     .unwrap_or_else(|| "unknown".into()),
             );
-            value_row(ui, "Disk read", process.du.read_bytes.format_size());
-            value_row(ui, "Disk written", process.du.written_bytes.format_size());
+            value_row(ui, "Disk read", detail.du.read_bytes.format_size());
+            value_row(ui, "Disk written", detail.du.written_bytes.format_size());
             value_row(
                 ui,
                 "Total disk read",
-                process.du.total_read_bytes.format_size(),
+                detail.du.total_read_bytes.format_size(),
             );
             value_row(
                 ui,
                 "Total disk written",
-                process.du.total_written_bytes.format_size(),
+                detail.du.total_written_bytes.format_size(),
             );
             {
-                ui.label(format!("cmd ({})", process.cmd.len()));
+                ui.label(format!("cmd ({})", detail.cmd.len()));
                 ui.collapsing("args", |ui| {
                     Grid::new("cmd_grid")
                         .num_columns(1)
                         .striped(true)
                         .spacing([16.0, 6.0])
                         .show(ui, |ui| {
-                            for arg in &process.cmd {
+                            for arg in &detail.cmd {
                                 ui.monospace(arg.as_str());
                                 ui.end_row();
                             }
@@ -194,10 +193,10 @@ fn process_summary(ui: &mut egui::Ui, process: &ProcessSnapshot) {
         });
 
     ui.collapsing("Command", |ui| {
-        if process.cmd.is_empty() {
+        if detail.cmd.is_empty() {
             ui.label("No command line available.");
         } else {
-            let command = process
+            let command = detail
                 .cmd
                 .iter()
                 .map(|arg| arg.as_str())

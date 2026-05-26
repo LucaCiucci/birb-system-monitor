@@ -166,6 +166,7 @@ impl Default for SysinfoConfig {
 pub(super) struct SysinfoSharedState {
     config: SysinfoConfig,
     process_selection: ProcessSelection,
+    process_info: HashMap<Pid, ProcessInfo>,
     data: Vec<SnapshotData>,
     cx: egui::Context,
     should_stop: bool,
@@ -176,6 +177,7 @@ impl SysinfoSharedState {
         Self {
             config: Default::default(),
             process_selection: Default::default(),
+            process_info: HashMap::new(),
             data: Vec::new(),
             cx,
             should_stop: false,
@@ -219,31 +221,27 @@ impl ProcessSelection {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SnapshotData {
-    captured_at: Instant,
-    general_stats: GeneralStats,
-    cpu_stats: CpuStats,
-    network_stats: NetworkStats,
-    disk_io_stats: DiskIoStats,
-    component_stats: ComponentStats,
-    processes: HashMap<Pid, ProcessSnapshot>,
+    pub(super) captured_at: Instant,
+    pub(super) general_stats: GeneralStats,
+    pub(super) cpu_stats: CpuStats,
+    pub(super) network_stats: NetworkStats,
+    pub(super) disk_io_stats: DiskIoStats,
+    pub(super) component_stats: ComponentStats,
+    pub(super) pids: Vec<Pid>,
 }
 
 impl SnapshotData {
-    fn take(sys: &mut System, networks: &Networks, disks: &Disks, components: &sysinfo::Components) -> Self {
+    fn take(sys: &mut System) -> Self {
         sys.refresh_cpu_all();
         sys.refresh_processes(ProcessesToUpdate::All, true);
         Self {
             captured_at: Instant::now(),
             general_stats: GeneralStats::take(sys),
             cpu_stats: CpuStats::take(sys),
-            network_stats: NetworkStats::take(networks),
-            disk_io_stats: DiskIoStats::take(disks),
-            component_stats: ComponentStats::take(components),
-            processes: sys
-                .processes()
-                .iter()
-                .map(|(pid, process)| (*pid, ProcessSnapshot::from_sysinfo(process)))
-                .collect(),
+            network_stats: NetworkStats::take_default(),
+            disk_io_stats: DiskIoStats::take_default(),
+            component_stats: ComponentStats::take_default(),
+            pids: sys.processes().keys().copied().collect(),
         }
     }
 }
@@ -309,6 +307,12 @@ impl ComponentStats {
                 .collect(),
         }
     }
+
+    fn take_default() -> Self {
+        Self {
+            components: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -345,6 +349,13 @@ impl NetworkStats {
             total_transmitted,
         }
     }
+
+    fn take_default() -> Self {
+        Self {
+            total_received: 0,
+            total_transmitted: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -367,26 +378,57 @@ impl DiskIoStats {
             total_written_bytes,
         }
     }
+
+    fn take_default() -> Self {
+        Self {
+            total_read_bytes: 0,
+            total_written_bytes: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct ProcessMetrics {
+    pub(super) cpu_usage: f32,
+    pub(super) memory: u64,
+    pub(super) virtual_memory: u64,
+}
+
+impl ProcessMetrics {
+    fn from_process(process: &sysinfo::Process) -> Self {
+        Self {
+            cpu_usage: process.cpu_usage(),
+            memory: process.memory(),
+            virtual_memory: process.virtual_memory(),
+        }
+    }
+}
+
+impl Default for ProcessMetrics {
+    fn default() -> Self {
+        Self {
+            cpu_usage: 0.0,
+            memory: 0,
+            virtual_memory: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct ProcessSnapshot {
+pub(super) struct ProcessDetail {
     pub(super) pid: Pid,
     pub(super) name: Ustr,
     pub(super) cmd: VecDeque<Ustr>,
     pub(super) cwd: Option<Ustr>,
     pub(super) accumulated_cpu_time: Duration,
-    pub(super) cpu_usage: f32,
-    pub(super) memory: u64,
-    pub(super) virtual_memory: u64,
     pub(super) du: DiskUsage,
     pub(super) effective_group_id: Option<Gid>,
     pub(super) effective_user_id: Option<Uid>,
     pub(super) thread_kind: Option<sysinfo::ThreadKind>,
 }
 
-impl ProcessSnapshot {
-    pub fn from_sysinfo(process: &sysinfo::Process) -> Self {
+impl ProcessDetail {
+    fn from_process(process: &sysinfo::Process) -> Self {
         Self {
             pid: process.pid(),
             name: process.name().to_string_lossy().into(),
@@ -397,15 +439,21 @@ impl ProcessSnapshot {
                 .collect(),
             cwd: process.cwd().map(|s| s.to_string_lossy().into()),
             accumulated_cpu_time: Duration::from_millis(process.accumulated_cpu_time()),
-            cpu_usage: process.cpu_usage(),
-            memory: process.memory(),
-            virtual_memory: process.virtual_memory(),
             du: process.disk_usage(),
             effective_group_id: process.effective_group_id(),
             effective_user_id: process.effective_user_id().cloned(),
             thread_kind: process.thread_kind(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct ProcessInfo {
+    pub(super) detail: ProcessDetail,
+    /// History of metrics, length always matches `data.len()` in shared state.
+    /// For processes that existed from the beginning, metrics[i] corresponds to data[i].
+    /// For processes that appeared later, earlier entries are zero-filled.
+    pub(super) metrics: VecDeque<ProcessMetrics>,
 }
 
 fn worker_thread(state: Arc<Mutex<SysinfoSharedState>>) {
@@ -438,12 +486,63 @@ fn worker_thread(state: Arc<Mutex<SysinfoSharedState>>) {
             last_component_refresh = Instant::now();
         }
 
-        let snapshot = SnapshotData::take(&mut sys, &networks, &disks, &components);
+        // Build the system-wide snapshot (just PIDs + general stats)
+        let snapshot = SnapshotData::take(&mut sys);
+
         let mut data = state.lock();
+
+        // Update process info before pushing snapshot
+        let snapshot_pids: HashSet<Pid> = snapshot.pids.iter().copied().collect();
+
+        let existing_snapshot_count = data.data.len();
+        for pid in &snapshot.pids {
+            if let Some(process) = sys.processes().get(pid) {
+                let metrics = ProcessMetrics::from_process(process);
+                let detail = ProcessDetail::from_process(process);
+
+                use std::collections::hash_map::Entry;
+                match data.process_info.entry(*pid) {
+                    Entry::Occupied(mut e) => {
+                        let info = e.get_mut();
+                        info.detail = detail;
+                        info.metrics.push_back(metrics);
+                    }
+                    Entry::Vacant(e) => {
+                        let mut metrics_deque = VecDeque::new();
+                        // Pad with zeros to match existing snapshot count
+                        for _ in 0..existing_snapshot_count {
+                            metrics_deque.push_back(ProcessMetrics::default());
+                        }
+                        metrics_deque.push_back(metrics);
+                        e.insert(ProcessInfo {
+                            detail,
+                            metrics: metrics_deque,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Remove dead PIDs from process_info
+        data.process_info.retain(|pid, _| snapshot_pids.contains(pid));
+
+        // Push snapshot (after process_info so indices align)
         data.data.push(snapshot);
+
+        // Also update network/disk/temp data in the latest snapshot
+        if let Some(latest) = data.data.last_mut() {
+            latest.network_stats = NetworkStats::take(&networks);
+            latest.disk_io_stats = DiskIoStats::take(&disks);
+            latest.component_stats = ComponentStats::take(&components);
+        }
+
+        // Trim old data
         let excess = data.data.len().saturating_sub(MAX_HISTORY_SNAPSHOTS);
         if excess > 0 {
             data.data.drain(..excess);
+            for info in data.process_info.values_mut() {
+                info.metrics.drain(..excess);
+            }
         }
         drop(data);
         cx.request_repaint();

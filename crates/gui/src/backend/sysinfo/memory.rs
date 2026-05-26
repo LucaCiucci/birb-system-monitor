@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashMap, collections::HashSet, sync::Arc};
 
 use egui::{Color32, Grid, ProgressBar, WidgetText, mutex::Mutex};
 use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
@@ -6,7 +6,7 @@ use human_units::FormatSize;
 use sysinfo::Pid;
 
 use crate::{
-    backend::sysinfo::{SnapshotData, SysinfoSharedState},
+    backend::sysinfo::{ProcessInfo, SnapshotData, SysinfoSharedState},
     BackendPanel,
 };
 
@@ -69,7 +69,7 @@ impl BackendPanel for MemoryPanel {
                 });
 
             let plot_height = ui.available_height().clamp(100.0, 600.0);
-            memory_plot(ui, &data.data, &data.process_selection.selected_processes, plot_height);
+            memory_plot(ui, &data.data, &data.process_info, &data.process_selection.selected_processes, plot_height);
         } else {
             ui.label("Loading...");
         }
@@ -77,7 +77,7 @@ impl BackendPanel for MemoryPanel {
     }
 }
 
-fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], selected_processes: &HashSet<Pid>, plot_height: f32) {
+fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], process_info: &HashMap<Pid, ProcessInfo>, selected_processes: &HashSet<Pid>, plot_height: f32) {
     let Some(latest) = snapshots.last() else {
         return;
     };
@@ -115,7 +115,7 @@ fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], selected_processes
             ]
         })
         .collect();
-    let selected_points = selected_memory_points(snapshots, latest, selected_processes);
+    let selected_points = selected_memory_points(snapshots, latest, selected_processes, process_info);
 
     Plot::new("sysinfo_memory_plot")
         .height(plot_height)
@@ -154,18 +154,20 @@ fn selected_memory_points(
     snapshots: &[SnapshotData],
     latest: &SnapshotData,
     selected_processes: &HashSet<Pid>,
+    process_info: &HashMap<Pid, ProcessInfo>,
 ) -> PlotPoints<'static> {
     snapshots
         .iter()
-        .map(|snapshot| {
+        .enumerate()
+        .map(|(i, snapshot)| {
             let seconds_ago = latest
                 .captured_at
                 .duration_since(snapshot.captured_at)
                 .as_secs_f64();
             let selected_memory = selected_processes
                 .iter()
-                .filter_map(|pid| snapshot.processes.get(pid))
-                .map(|process| process.memory)
+                .filter_map(|pid| process_info.get(pid))
+                .map(|info| info.metrics.get(i).map(|m| m.memory).unwrap_or(0))
                 .sum::<u64>();
             [
                 seconds_ago,

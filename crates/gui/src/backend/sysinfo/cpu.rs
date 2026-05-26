@@ -1,11 +1,11 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashMap, collections::HashSet, sync::Arc};
 
 use egui::{mutex::Mutex, Color32, Grid, ProgressBar, Stroke, WidgetText};
 use egui_plot::{AxisHints, Corner, FilledArea, Legend, Line, Plot, PlotPoints};
 use serde::{Deserialize, Serialize};
 use sysinfo::Pid;
 
-use crate::{backend::sysinfo::SysinfoSharedState, BackendPanel};
+use crate::{backend::sysinfo::{ProcessInfo, SysinfoSharedState}, BackendPanel};
 
 const MIN_USAGE_PERCENT: f64 = 0.0;
 const MAX_USAGE_PERCENT: f64 = 100.0;
@@ -66,6 +66,7 @@ impl BackendPanel for CpuPanel {
         cpu_plot(
             ui,
             &data.data,
+            &data.process_info,
             self.config.show_per_cpu,
             &data.process_selection.selected_processes,
             plot_height,
@@ -106,6 +107,7 @@ impl BackendPanel for CpuPanel {
 fn cpu_plot(
     ui: &mut egui::Ui,
     snapshots: &[crate::backend::sysinfo::SnapshotData],
+    process_info: &HashMap<Pid, ProcessInfo>,
     show_per_cpu: bool,
     selected_processes: &HashSet<Pid>,
     plot_height: f32,
@@ -128,7 +130,7 @@ fn cpu_plot(
             ]
         })
         .collect();
-    let selected_points = selected_cpu_points(snapshots, latest, selected_processes);
+    let selected_points = selected_cpu_points(snapshots, latest, selected_processes, process_info);
 
     let plot = Plot::new("sysinfo_cpu_plot")
         .height(plot_height)
@@ -196,18 +198,20 @@ fn selected_cpu_points(
     snapshots: &[crate::backend::sysinfo::SnapshotData],
     latest: &crate::backend::sysinfo::SnapshotData,
     selected_processes: &HashSet<Pid>,
+    process_info: &HashMap<Pid, ProcessInfo>,
 ) -> PlotPoints<'static> {
     snapshots
         .iter()
-        .map(|snapshot| {
+        .enumerate()
+        .map(|(i, snapshot)| {
             let seconds_ago = latest
                 .captured_at
                 .duration_since(snapshot.captured_at)
                 .as_secs_f64();
             let selected_usage = selected_processes
                 .iter()
-                .filter_map(|pid| snapshot.processes.get(pid))
-                .map(|process| process.cpu_usage as f64)
+                .filter_map(|pid| process_info.get(pid))
+                .map(|info| info.metrics.get(i).map(|m| m.cpu_usage as f64).unwrap_or(0.0))
                 .sum::<f64>();
             [seconds_ago, clamp_percent(selected_usage)]
         })

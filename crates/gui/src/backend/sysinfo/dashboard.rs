@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashMap, collections::HashSet, sync::Arc};
 
 use egui::{Color32, ProgressBar, Stroke, Ui, WidgetText, mutex::Mutex};
 use egui_extras::{Column, TableBuilder};
@@ -7,7 +7,7 @@ use human_units::FormatSize;
 use sysinfo::Pid;
 
 use crate::{
-    backend::sysinfo::{SnapshotData, SysinfoSharedState},
+    backend::sysinfo::{ProcessInfo, SnapshotData, SysinfoSharedState},
     BackendPanel,
 };
 
@@ -104,11 +104,11 @@ impl BackendPanel for DashboardPanel {
                 // Row 1
                 body.row(row_height, |mut row| {
                     row.col(|ui| {
-                        mini_cpu_plot(ui, latest, &data.data, &data.process_selection.selected_processes, mini_plot_height);
+                        mini_cpu_plot(ui, latest, &data.data, &data.process_info, &data.process_selection.selected_processes, mini_plot_height);
                     });
                     if cols >= 2 {
                         row.col(|ui| {
-                            mini_memory_plot(ui, latest, &data.data, &data.process_selection.selected_processes, mini_plot_height);
+                            mini_memory_plot(ui, latest, &data.data, &data.process_info, &data.process_selection.selected_processes, mini_plot_height);
                         });
                     }
                 });
@@ -166,6 +166,7 @@ fn mini_cpu_plot(
     ui: &mut Ui,
     latest: &SnapshotData,
     snapshots: &[SnapshotData],
+    process_info: &HashMap<Pid, ProcessInfo>,
     selected_processes: &HashSet<Pid>,
     plot_height: f32,
 ) {
@@ -184,7 +185,7 @@ fn mini_cpu_plot(
             })
             .collect();
 
-        let selected_points = selected_cpu_points(snapshots, latest, selected_processes);
+        let selected_points = selected_cpu_points(snapshots, latest, selected_processes, process_info);
 
         Plot::new("dash_cpu")
             .height(plot_height)
@@ -225,6 +226,7 @@ fn mini_memory_plot(
     ui: &mut Ui,
     latest: &SnapshotData,
     snapshots: &[SnapshotData],
+    process_info: &HashMap<Pid, ProcessInfo>,
     selected_processes: &HashSet<Pid>,
     plot_height: f32,
 ) {
@@ -252,7 +254,7 @@ fn mini_memory_plot(
                 [seconds_ago, clamp_percent(percent(snapshot.general_stats.used_swap, snapshot.general_stats.total_swap))]
             })
             .collect();
-        let selected_points = selected_memory_points(snapshots, latest, selected_processes);
+        let selected_points = selected_memory_points(snapshots, latest, selected_processes, process_info);
 
         Plot::new("dash_memory")
             .height(plot_height)
@@ -532,18 +534,20 @@ fn selected_cpu_points(
     snapshots: &[SnapshotData],
     latest: &SnapshotData,
     selected_processes: &HashSet<Pid>,
+    process_info: &HashMap<Pid, ProcessInfo>,
 ) -> PlotPoints<'static> {
     snapshots
         .iter()
-        .map(|snapshot| {
+        .enumerate()
+        .map(|(i, snapshot)| {
             let seconds_ago = latest
                 .captured_at
                 .duration_since(snapshot.captured_at)
                 .as_secs_f64();
             let selected_usage = selected_processes
                 .iter()
-                .filter_map(|pid| snapshot.processes.get(pid))
-                .map(|process| process.cpu_usage as f64)
+                .filter_map(|pid| process_info.get(pid))
+                .map(|info| info.metrics.get(i).map(|m| m.cpu_usage as f64).unwrap_or(0.0))
                 .sum::<f64>();
             [seconds_ago, clamp_percent(selected_usage)]
         })
@@ -554,18 +558,20 @@ fn selected_memory_points(
     snapshots: &[SnapshotData],
     latest: &SnapshotData,
     selected_processes: &HashSet<Pid>,
+    process_info: &HashMap<Pid, ProcessInfo>,
 ) -> PlotPoints<'static> {
     snapshots
         .iter()
-        .map(|snapshot| {
+        .enumerate()
+        .map(|(i, snapshot)| {
             let seconds_ago = latest
                 .captured_at
                 .duration_since(snapshot.captured_at)
                 .as_secs_f64();
             let selected_memory = selected_processes
                 .iter()
-                .filter_map(|pid| snapshot.processes.get(pid))
-                .map(|process| process.memory)
+                .filter_map(|pid| process_info.get(pid))
+                .map(|info| info.metrics.get(i).map(|m| m.memory).unwrap_or(0))
                 .sum::<u64>();
             [seconds_ago, clamp_percent(percent(selected_memory, snapshot.general_stats.total_memory))]
         })

@@ -9,8 +9,10 @@ use human_units::{FormatDuration, FormatSize};
 use serde::{Deserialize, Serialize};
 use sysinfo::Pid;
 
+use std::collections::{HashMap, HashSet};
+
 use crate::{
-    backend::sysinfo::{ProcessSnapshot, SnapshotData, SysinfoSharedState},
+    backend::sysinfo::{ProcessInfo, SysinfoSharedState},
     BackendPanel,
 };
 
@@ -62,18 +64,14 @@ impl BackendPanel for ProcessesPanel {
     fn ui(&mut self, ui: &mut egui::Ui) {
         let state = self.state.clone();
         let mut state = state.lock();
-        let (pids, existing_pids, process_count) = {
-            let Some(data) = state.data.last() else {
-                ui.label("Loading...");
-                return;
-            };
-            (
-                self.list_pids(data),
-                data.processes.keys().copied().collect(),
-                data.processes.len(),
-            )
+        let Some(_) = state.data.last() else {
+            ui.label("Loading...");
+            return;
         };
+        let existing_pids: HashSet<Pid> = state.process_info.keys().copied().collect();
         state.process_selection.retain_existing_pids(&existing_pids);
+        let pids = self.list_pids(&state.process_info);
+        let process_count = state.process_info.len();
 
         ui.horizontal(|ui| {
             ui.add(Checkbox::new(&mut self.config.show_threads, "Show threads"));
@@ -133,11 +131,7 @@ impl BackendPanel for ProcessesPanel {
             })
         });
         let clicked_pid = {
-            let data = state
-                .data
-                .last()
-                .expect("snapshot disappeared while rendering");
-            self.table(data, ui, &pids, &state.process_selection.selected_processes)
+            self.table(&state.process_info, ui, &pids, &state.process_selection.selected_processes)
         };
         if let Some(clicked_pid) = clicked_pid {
             state.process_selection.select_process(clicked_pid);
@@ -155,22 +149,20 @@ impl BackendPanel for ProcessesPanel {
 }
 
 impl ProcessesPanel {
-    fn list_pids(&self, data: &SnapshotData) -> Vec<Pid> {
-        let mut pids = data
-            .processes
+    fn list_pids(&self, process_info: &HashMap<Pid, ProcessInfo>) -> Vec<Pid> {
+        let mut pids = process_info
             .iter()
-            .filter(|(_, p)| !p.thread_kind.is_some() || self.config.show_threads)
-            .map(|(pid, _)| pid)
-            .cloned()
+            .filter(|(_, info)| !info.detail.thread_kind.is_some() || self.config.show_threads)
+            .map(|(pid, _)| *pid)
             .collect::<Vec<_>>();
         if !self.config.filter.is_empty() {
             pids.retain(|pid| {
-                let process = &data.processes[pid];
-                process.name.contains(&self.config.filter)
-                    || process
-                        .cmd
-                        .iter()
-                        .any(|arg| arg.contains(&self.config.filter))
+                if let Some(info) = process_info.get(pid) {
+                    info.detail.name.contains(&self.config.filter)
+                        || info.detail.cmd.iter().any(|arg| arg.contains(&self.config.filter))
+                } else {
+                    false
+                }
             });
         }
         pids.sort();
@@ -180,26 +172,30 @@ impl ProcessesPanel {
                 pids.sort_by_key(|pid| *pid);
             }
             ProcessColumn::Name => {
-                pids.sort_by_key(|pid| data.processes[pid].name.clone());
+                pids.sort_by_key(|pid| process_info[pid].detail.name.clone());
             }
             ProcessColumn::CpuUsage => {
                 pids.sort_by(|a, b| {
-                    data.processes[b]
-                        .cpu_usage
-                        .partial_cmp(&data.processes[a].cpu_usage)
-                        .unwrap()
+                    let latest_a = process_info[a].metrics.back().map(|m| m.cpu_usage).unwrap_or(0.0);
+                    let latest_b = process_info[b].metrics.back().map(|m| m.cpu_usage).unwrap_or(0.0);
+                    latest_b.partial_cmp(&latest_a).unwrap()
                 });
             }
             ProcessColumn::CpuTime => {
                 pids.sort_by(|a, b| {
-                    data.processes[b]
+                    process_info[b]
+                        .detail
                         .accumulated_cpu_time
-                        .partial_cmp(&data.processes[a].accumulated_cpu_time)
+                        .partial_cmp(&process_info[a].detail.accumulated_cpu_time)
                         .unwrap()
                 });
             }
             ProcessColumn::MemoryUsage => {
-                pids.sort_by_key(|pid| data.processes[pid].memory);
+                pids.sort_by(|a, b| {
+                    let latest_a = process_info[a].metrics.back().map(|m| m.memory).unwrap_or(0);
+                    let latest_b = process_info[b].metrics.back().map(|m| m.memory).unwrap_or(0);
+                    latest_b.cmp(&latest_a)
+                });
             }
         }
 
@@ -212,7 +208,7 @@ impl ProcessesPanel {
 
     fn table(
         &mut self,
-        data: &SnapshotData,
+        process_info: &HashMap<Pid, ProcessInfo>,
         ui: &mut Ui,
         pids: &[Pid],
         selected_processes: &std::collections::HashSet<Pid>,
@@ -263,18 +259,19 @@ impl ProcessesPanel {
                 body.rows(text_height, total_rows, |mut row| {
                     let i = row.index();
                     let pid = pids[i];
-                    let process = &data.processes[&pid];
-                    let selected = selected_processes.contains(&pid);
-                    row.set_selected(selected);
-                    let mut clicked = false;
-                    for column in &self.config.columns {
-                        let (_, response) = row.col(|ui| {
-                            column.show(process, ui);
-                        });
-                        clicked |= response.clicked();
-                    }
-                    if clicked {
-                        clicked_pid = Some(pid);
+                    if let Some(info) = process_info.get(&pid) {
+                        let selected = selected_processes.contains(&pid);
+                        row.set_selected(selected);
+                        let mut clicked = false;
+                        for column in &self.config.columns {
+                            let (_, response) = row.col(|ui| {
+                                column.show(info, ui);
+                            });
+                            clicked |= response.clicked();
+                        }
+                        if clicked {
+                            clicked_pid = Some(pid);
+                        }
                     }
                 });
             });
@@ -341,25 +338,26 @@ impl ProcessColumn {
         }
     }
 
-    fn show(&self, process: &ProcessSnapshot, ui: &mut Ui) {
+    fn show(&self, info: &ProcessInfo, ui: &mut Ui) {
+        let latest_metrics = info.metrics.back().copied().unwrap_or_default();
         match self {
             ProcessColumn::Pid => {
-                ui.label(format!("{}", process.pid));
+                ui.label(format!("{}", info.detail.pid));
             }
             ProcessColumn::Name => {
-                ui.label(process.name.as_str());
+                ui.label(info.detail.name.as_str());
             }
             ProcessColumn::CpuUsage => {
-                ui.label(format!("{:.1}%", process.cpu_usage));
+                ui.label(format!("{:.1}%", latest_metrics.cpu_usage));
             }
             ProcessColumn::CpuTime => {
                 ui.label(format!(
                     "{:.2}",
-                    process.accumulated_cpu_time.format_duration()
+                    info.detail.accumulated_cpu_time.format_duration()
                 ));
             }
             ProcessColumn::MemoryUsage => {
-                ui.label(format!("{}", process.memory.format_size()));
+                ui.label(format!("{}", latest_metrics.memory.format_size()));
             }
         }
     }
