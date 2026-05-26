@@ -15,6 +15,7 @@ use crate::{
         cpu::CpuPanel, dashboard::DashboardPanel, disk_io::DiskIoPanel,
         memory::MemoryPanel, network::NetworkPanel, proc_list::ProcessesPanel,
         selected_process::SelectedProcessPanel, settings::SettingsPanel,
+        temperature::TemperaturePanel, temperature_chart::TemperatureChartPanel,
     },
     Backend, BackendPanel, BackendPanelId, BackendPanelInfo,
 };
@@ -27,6 +28,8 @@ mod network;
 mod proc_list;
 mod selected_process;
 mod settings;
+mod temperature;
+mod temperature_chart;
 
 const MAX_HISTORY_SNAPSHOTS: usize = 600;
 
@@ -117,6 +120,16 @@ impl Backend for SysinfoBackend {
                 title: "Sysinfo Settings".into(),
                 description: "Configure sysinfo backend settings".into(),
             },
+            BackendPanelInfo {
+                id: BackendPanelId("temperature".into()),
+                title: "Temperatures".into(),
+                description: "Shows component temperatures".into(),
+            },
+            BackendPanelInfo {
+                id: BackendPanelId("temperature-chart".into()),
+                title: "Temperature Chart".into(),
+                description: "Shows temperature history chart".into(),
+            },
         ]
     }
 
@@ -130,6 +143,8 @@ impl Backend for SysinfoBackend {
             "disk-io" => Box::new(DiskIoPanel::new(self.state.clone())),
             "dashboard" => Box::new(DashboardPanel::new(self.state.clone())),
             "settings" => Box::new(SettingsPanel::new(self.state.clone())),
+            "temperature" => Box::new(TemperaturePanel::new(self.state.clone())),
+            "temperature-chart" => Box::new(TemperatureChartPanel::new(self.state.clone())),
             _ => panic!("Unknown panel id: {}", panel_id.0),
         }
     }
@@ -209,11 +224,12 @@ pub(super) struct SnapshotData {
     cpu_stats: CpuStats,
     network_stats: NetworkStats,
     disk_io_stats: DiskIoStats,
+    component_stats: ComponentStats,
     processes: HashMap<Pid, ProcessSnapshot>,
 }
 
 impl SnapshotData {
-    fn take(sys: &mut System, networks: &Networks, disks: &Disks) -> Self {
+    fn take(sys: &mut System, networks: &Networks, disks: &Disks, components: &sysinfo::Components) -> Self {
         sys.refresh_cpu_all();
         sys.refresh_processes(ProcessesToUpdate::All, true);
         Self {
@@ -222,6 +238,7 @@ impl SnapshotData {
             cpu_stats: CpuStats::take(sys),
             network_stats: NetworkStats::take(networks),
             disk_io_stats: DiskIoStats::take(disks),
+            component_stats: ComponentStats::take(components),
             processes: sys
                 .processes()
                 .iter()
@@ -261,6 +278,35 @@ impl GeneralStats {
             used_memory: sys.used_memory(),
             total_swap: sys.total_swap(),
             used_swap: sys.used_swap(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub(super) struct ComponentStats {
+    pub(super) components: Vec<ComponentSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub(super) struct ComponentSnapshot {
+    pub(super) label: String,
+    pub(super) temperature: Option<f32>,
+    pub(super) max: Option<f32>,
+    pub(super) critical: Option<f32>,
+}
+
+impl ComponentStats {
+    fn take(components: &sysinfo::Components) -> Self {
+        Self {
+            components: components
+                .iter()
+                .map(|c| ComponentSnapshot {
+                    label: c.label().to_string(),
+                    temperature: c.temperature(),
+                    max: c.max(),
+                    critical: c.critical(),
+                })
+                .collect(),
         }
     }
 }
@@ -366,6 +412,10 @@ fn worker_thread(state: Arc<Mutex<SysinfoSharedState>>) {
     let mut sys = System::new_all();
     let mut networks = Networks::new_with_refreshed_list();
     let mut disks = Disks::new_with_refreshed_list();
+    let mut components = sysinfo::Components::new_with_refreshed_list();
+
+    // Refresh interval for components (not all systems support frequent updates)
+    let mut last_component_refresh = Instant::now();
 
     loop {
         let (cx, update_interval) = {
@@ -379,7 +429,16 @@ fn worker_thread(state: Arc<Mutex<SysinfoSharedState>>) {
         networks.refresh(true);
         disks.refresh(false);
 
-        let snapshot = SnapshotData::take(&mut sys, &networks, &disks);
+        // Refresh components less frequently (every ~5s or on first call)
+        let refresh_components = last_component_refresh.elapsed() >= Duration::from_secs(5);
+        if refresh_components {
+            for c in components.iter_mut() {
+                c.refresh();
+            }
+            last_component_refresh = Instant::now();
+        }
+
+        let snapshot = SnapshotData::take(&mut sys, &networks, &disks, &components);
         let mut data = state.lock();
         data.data.push(snapshot);
         let excess = data.data.len().saturating_sub(MAX_HISTORY_SNAPSHOTS);

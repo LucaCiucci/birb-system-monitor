@@ -90,7 +90,7 @@ impl BackendPanel for DashboardPanel {
 
         // Compute dynamic height for mini plots based on remaining space.
         // Remaining items after the plots: separator + per-core bars (~40px total).
-        let plot_rows = if cols >= 2 { 2 } else { 4 };
+        let plot_rows = if cols >= 2 { 3 } else { 5 };
         let plot_area = (ui.available_height() - 40.0).max(0.0);
         let mini_plot_height = (plot_area / plot_rows as f32 - 20.0).clamp(80.0, 250.0);
 
@@ -121,6 +121,15 @@ impl BackendPanel for DashboardPanel {
                         row.col(|ui| {
                             mini_disk_io_plot(ui, latest, &data.data, mini_plot_height);
                         });
+                    }
+                });
+                // Row 3: Temperature chart
+                body.row(row_height, |mut row| {
+                    row.col(|ui| {
+                        mini_temperature_chart(ui, latest, &data.data, mini_plot_height);
+                    });
+                    if cols >= 2 {
+                        row.col(|_ui| {});
                     }
                 });
             });
@@ -366,6 +375,78 @@ fn mini_disk_io_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotDa
     });
 }
 
+// ── Temperature mini chart ──
+
+fn mini_temperature_chart(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotData], plot_height: f32) {
+    if latest.component_stats.components.is_empty() {
+        ui.vertical(|ui| {
+            ui.label("Temperature");
+            ui.label("No sensors");
+        });
+        return;
+    }
+
+    ui.vertical(|ui| {
+        ui.label("Temperature");
+        let max_time = max_time_seconds(snapshots, latest);
+
+        // Compute y range
+        let mut max_temp = 0.0_f64;
+        for snapshot in snapshots {
+            for c in &snapshot.component_stats.components {
+                if let Some(t) = c.temperature {
+                    max_temp = max_temp.max(t as f64);
+                }
+            }
+        }
+        let y_max = (max_temp * 1.15).max(50.0);
+
+        Plot::new("dash_temperature")
+            .height(plot_height)
+            .invert_x(true)
+            .default_x_bounds(MIN_TIME_SECONDS, max_time)
+            .default_y_bounds(0.0, y_max)
+            .auto_bounds(false)
+            .allow_drag(false)
+            .allow_zoom(false)
+            .allow_scroll(false)
+            .allow_boxed_zoom(false)
+            .allow_double_click_reset(false)
+            .show_axes(false)
+            .legend(Legend::default().position(Corner::LeftTop))
+            .show(ui, |plot_ui| {
+                plot_ui.set_plot_bounds_x(MIN_TIME_SECONDS..=max_time);
+                plot_ui.set_plot_bounds_y(0.0..=y_max);
+
+                for (i, component) in latest.component_stats.components.iter().enumerate() {
+                    let points: PlotPoints = snapshots
+                        .iter()
+                        .map(|snapshot| {
+                            let seconds_ago = latest
+                                .captured_at
+                                .duration_since(snapshot.captured_at)
+                                .as_secs_f64();
+                            let temp = snapshot
+                                .component_stats
+                                .components
+                                .iter()
+                                .find(|c| c.label == component.label)
+                                .and_then(|c| c.temperature)
+                                .unwrap_or(0.0) as f64;
+                            [seconds_ago, temp]
+                        })
+                        .collect();
+
+                    plot_ui.line(
+                        Line::new(&component.label, points)
+                            .color(temp_line_color(i))
+                            .width(1.5),
+                    );
+                }
+            });
+    });
+}
+
 // ── Helper functions ──
 
 fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData) -> f64 {
@@ -477,4 +558,20 @@ fn selected_memory_points(
             [seconds_ago, clamp_percent(percent(selected_memory, snapshot.general_stats.total_memory))]
         })
         .collect()
+}
+
+fn temp_line_color(index: usize) -> Color32 {
+    const COLORS: [Color32; 10] = [
+        Color32::from_rgb(244, 67, 54),
+        Color32::from_rgb(255, 152, 0),
+        Color32::from_rgb(255, 235, 59),
+        Color32::from_rgb(76, 175, 80),
+        Color32::from_rgb(33, 150, 243),
+        Color32::from_rgb(156, 39, 176),
+        Color32::from_rgb(0, 188, 212),
+        Color32::from_rgb(233, 30, 99),
+        Color32::from_rgb(96, 125, 139),
+        Color32::from_rgb(121, 85, 72),
+    ];
+    COLORS[index % COLORS.len()]
 }
