@@ -34,6 +34,7 @@ egui_plot = "=0.35.0"
 env_logger = "0.11.10"
 erased-serde = "0.4.10"
 human-units = "0.5.3"
+itertools = "0.14.0"
 ordered_hash_map = { version = "0.6.0", features = ["serde"] }
 ron = "0.12.1"
 serde = { version = "1.0.228", features = ["derive"] }

@@ -2,13 +2,14 @@ use std::{collections::HashMap, time::Duration};
 
 use birb_system_monitor_gui::{Backend, BackendId, BackendPanel, PanelId, backend::init_all_backends, save::Profile, tabs::{Tab, default_dock_state}};
 use eframe::egui;
-use egui::{MenuBar, Ui, WidgetText, accesskit::Uuid};
+use egui::{Button, Color32, Id, MenuBar, Ui, Vec2, WidgetText, accesskit::Uuid};
 use egui_dock::{DockArea, TabViewer};
+use itertools::Itertools;
+use ordered_hash_map::OrderedHashMap;
 use tracing::info;
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
-    //env_logger::init();
 
     let app_id = env!("CARGO_PKG_NAME");
 
@@ -32,7 +33,8 @@ struct MonitorApp {
     loaded_profile: Option<Profile>,
     backends: HashMap<BackendId, Box<dyn Backend>>,
     panels: HashMap<(PanelId, Uuid), Box<dyn BackendPanel>>,
-    dock_state: egui_dock::DockState<Tab>,
+    dock_states: OrderedHashMap<String, egui_dock::DockState<Tab>>,
+    selected_tab: String,
 }
 
 impl MonitorApp {
@@ -40,7 +42,8 @@ impl MonitorApp {
         self.loaded_profile = None;
         self.backends = init_all_backends(cx);
         self.panels.clear();
-        self.dock_state = default_dock_state();
+        self.dock_states = Default::default();
+        self.selected_tab = "main".into();
     }
 
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
@@ -52,7 +55,7 @@ impl MonitorApp {
                 e
             }).ok());
 
-        let dock_state = loaded_profile.as_ref().map(|p| p.dock_state.clone()).unwrap_or_else(default_dock_state);
+        let dock_states = loaded_profile.as_ref().map(|p| p.dock_states.clone()).unwrap_or_default();
 
         let mut backends = init_all_backends(&_cc.egui_ctx);
 
@@ -64,7 +67,7 @@ impl MonitorApp {
             }
         }
 
-        Self { loaded_profile, backends, panels: HashMap::default(), dock_state }
+        Self { loaded_profile, backends, panels: HashMap::default(), dock_states, selected_tab: "main".into() }
     }
 
     fn menu(&mut self, ui: &mut Ui) {
@@ -87,7 +90,7 @@ impl MonitorApp {
                         for panel in (&**backend).panels() {
                             if ui.button(panel.title.as_str()).clicked() {
                                 let panel_id = PanelId::new(id.clone(), panel.id.clone());
-                                self.dock_state.push_to_focused_leaf(Tab::Panel(panel_id, Uuid::new_v4()));
+                                self.dock_states.entry(self.selected_tab.clone()).or_insert_with(default_dock_state).push_to_focused_leaf(Tab::Panel(panel_id, Uuid::new_v4()));
                             }
                         }
                     });
@@ -101,8 +104,49 @@ impl eframe::App for MonitorApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             self.menu(ui);
+            ui.separator();
+            ui.horizontal(|ui| {
+                for tab in self.dock_states.keys().cloned().collect_vec() {
+                    let selected = self.selected_tab == *tab;
+                    let selectable_label = Button::selectable(selected, tab.as_str()).min_size(Vec2::new(50.0, 0.0));
+                    if ui.add(selectable_label).clicked() {
+                        self.selected_tab = tab.clone();
+                    }
+                    if selected {
+                        let btn = Button::new("x").fill(Color32::DARK_RED).small();
+                        if ui.add(btn).clicked() {
+                            self.dock_states.remove(&tab);
+                            if self.selected_tab == *tab {
+                                self.selected_tab = self.dock_states.keys().next().cloned().unwrap_or_else(|| "main".into());
+                            }
+                        }
+                    }
+                }
+                {
+                    let editing_id = Id::new("editing").with(ui.id());
+                    let editing = ui.data_mut(|m| m.get_temp_mut_or_insert_with(editing_id, || false).clone());
+                    if editing {
+                        let new_name_id = Id::new("editing_name").with(ui.id());
+                        let mut new_name_str = ui.data_mut(|m| m.get_temp_mut_or_insert_with(new_name_id, || format!("tab_{}", self.dock_states.len() + 1)).clone());
+                        let new_name = ui.text_edit_singleline(&mut new_name_str).lost_focus();
+                        ui.data_mut(|m: &mut egui::util::IdTypeMap| {
+                            m.insert_temp(new_name_id, new_name_str.clone());
+                        });
+                        if new_name {
+                            self.selected_tab = new_name_str.clone();
+                            ui.data_mut(|m| m.insert_temp(editing_id, false));
+                        }
+                    } else {
+                        let btn = Button::new("+").small();
+                        let r = ui.add(btn).on_hover_text("Add new tab");
+                        if r.clicked() {
+                            ui.data_mut(|m| m.insert_temp(editing_id, true));
+                        }
+                    }
+                }
+            });
 
-            DockArea::new(&mut self.dock_state)
+            DockArea::new(self.dock_states.entry(self.selected_tab.clone()).or_insert_with(default_dock_state))
                 .style(egui_dock::Style::from_egui(ui.style().as_ref()))
                 .show_inside(ui, &mut MyTabViewer::new(&self.loaded_profile, &self.backends, &mut self.panels));
         });
@@ -113,7 +157,7 @@ impl eframe::App for MonitorApp {
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        let mut profile = Profile::new(self.dock_state.clone());
+        let mut profile = Profile::new(self.dock_states.clone());
 
         for (id, backend) in &self.backends {
             if let Ok(config) = backend.save_config() {

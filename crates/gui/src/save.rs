@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, path::Path};
 
 use anyhow::bail;
 use egui_dock::DockState;
+use ordered_hash_map::OrderedHashMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -11,15 +12,15 @@ use crate::{BackendId, BackendPanelId, tabs::Tab};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
-    pub dock_state: DockState<Tab>,
+    pub dock_states: OrderedHashMap<String, DockState<Tab>>,
     pub backend_config: BTreeMap<BackendId, serde_json::Value>,
     pub panel_config: BTreeMap<BackendId, BTreeMap<BackendPanelId, BTreeMap<String, serde_json::Value>>>,
 }
 
 impl Profile {
-    pub fn new(dock_state: DockState<Tab>) -> Self {
+    pub fn new(dock_states: OrderedHashMap<String, DockState<Tab>>) -> Self {
         Self {
-            dock_state,
+            dock_states,
             backend_config: Default::default(),
             panel_config: Default::default(),
         }

@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
-use egui::{mutex::Mutex, Color32, ProgressBar, WidgetText};
+use egui::{Color32, Grid, ProgressBar, WidgetText, mutex::Mutex};
 use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
 use human_units::FormatSize;
 use sysinfo::Pid;
@@ -33,35 +33,40 @@ impl BackendPanel for MemoryPanel {
         let data = self.state.lock();
 
         if let Some(data_latest) = data.data.last() {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(format!(
-                    "Memory: {} / {}",
-                    data_latest.general_stats.used_memory.format_size(),
-                    data_latest.general_stats.total_memory.format_size()
-                ));
-                ui.label(format!(
-                    "Swap: {} / {}",
-                    data_latest.general_stats.used_swap.format_size(),
-                    data_latest.general_stats.total_swap.format_size()
-                ));
-            });
-
-            let memory_percent = percent(
-                data_latest.general_stats.used_memory,
-                data_latest.general_stats.total_memory,
-            );
-            let swap_percent = percent(
-                data_latest.general_stats.used_swap,
-                data_latest.general_stats.total_swap,
-            );
-            ui.add(
-                ProgressBar::new(memory_percent as f32 / 100.0)
-                    .text(format!("Memory {:.1}%", memory_percent)),
-            );
-            ui.add(
-                ProgressBar::new(swap_percent as f32 / 100.0)
-                    .text(format!("Swap {:.1}%", swap_percent)),
-            );
+            Grid::new("memory_overview")
+                .num_columns(2)
+                .striped(true)
+                .spacing([16.0, 6.0])
+                .show(ui, |ui| {
+                    ui.label(format!(
+                        "Memory: {} / {}",
+                        data_latest.general_stats.used_memory.format_size(),
+                        data_latest.general_stats.total_memory.format_size()
+                    ));
+                    let memory_percent = percent(
+                        data_latest.general_stats.used_memory,
+                        data_latest.general_stats.total_memory,
+                    );
+                    ui.add(
+                        ProgressBar::new(memory_percent as f32 / 100.0)
+                            .text(format!("Memory {:.1}%", memory_percent)),
+                    );
+                    ui.end_row();
+                    ui.label(format!(
+                        "Swap: {} / {}",
+                        data_latest.general_stats.used_swap.format_size(),
+                        data_latest.general_stats.total_swap.format_size()
+                    ));
+                    let swap_percent = percent(
+                        data_latest.general_stats.used_swap,
+                        data_latest.general_stats.total_swap,
+                    );
+                    ui.add(
+                        ProgressBar::new(swap_percent as f32 / 100.0)
+                            .text(format!("Swap {:.1}%", swap_percent)),
+                    );
+                    ui.end_row();
+                });
 
             memory_plot(ui, &data.data, &data.process_selection.selected_processes);
         } else {
