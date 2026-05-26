@@ -254,4 +254,8 @@ impl<'a> TabViewer for MyTabViewer<'a> {
             }
         }
     }
+
+    fn scroll_bars(&self, _tab: &Self::Tab) -> [bool; 2] {
+        [false, true]
+    }
 }
