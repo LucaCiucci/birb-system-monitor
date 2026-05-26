@@ -68,7 +68,8 @@ impl BackendPanel for MemoryPanel {
                     ui.end_row();
                 });
 
-            memory_plot(ui, &data.data, &data.process_selection.selected_processes);
+            let plot_height = ui.available_height().clamp(100.0, 600.0);
+            memory_plot(ui, &data.data, &data.process_selection.selected_processes, plot_height);
         } else {
             ui.label("Loading...");
         }
@@ -93,7 +94,7 @@ impl BackendPanel for MemoryPanel {
     }
 }
 
-fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], selected_processes: &HashSet<Pid>) {
+fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], selected_processes: &HashSet<Pid>, plot_height: f32) {
     let Some(latest) = snapshots.last() else {
         return;
     };
@@ -134,7 +135,7 @@ fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], selected_processes
     let selected_points = selected_memory_points(snapshots, latest, selected_processes);
 
     Plot::new("sysinfo_memory_plot")
-        .height(220.0)
+        .height(plot_height)
         .invert_x(true)
         .default_x_bounds(MIN_TIME_SECONDS, max_time_seconds)
         .default_y_bounds(MIN_USAGE_PERCENT, MAX_USAGE_PERCENT)

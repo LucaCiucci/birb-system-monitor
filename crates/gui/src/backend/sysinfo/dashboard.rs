@@ -59,6 +59,15 @@ impl BackendPanel for DashboardPanel {
 
         ui.separator();
 
+        // Compute dynamic height for mini plots based on available space.
+        // The remaining elements after the grid are: separator + per-core bars (~35px) + settings.
+        // Settings is collapsing, so when closed it's ~25px, when open it can grow.
+        // We target filling available height without scrolling.
+        let rows = if cols >= 2 { 2 } else { 4 };
+        let remaining_after_grid = 70.0; // separator + core bars + settings header estimate
+        let mini_plot_height = ((ui.available_height() - remaining_after_grid) / rows as f32)
+            .clamp(80.0, 250.0);
+
         // -- Responsive grid of mini graphs --
         egui::Grid::new("dashboard_grid")
             .num_columns(cols)
@@ -66,19 +75,19 @@ impl BackendPanel for DashboardPanel {
             .spacing([8.0, 8.0])
             .show(ui, |ui| {
                 // CPU
-                mini_cpu_plot(ui, latest, &data.data, &data.process_selection.selected_processes);
+                mini_cpu_plot(ui, latest, &data.data, &data.process_selection.selected_processes, mini_plot_height);
                 if cols >= 2 { ui.end_row(); }
 
                 // Memory
-                mini_memory_plot(ui, latest, &data.data, &data.process_selection.selected_processes);
+                mini_memory_plot(ui, latest, &data.data, &data.process_selection.selected_processes, mini_plot_height);
                 if cols >= 2 { ui.end_row(); }
 
                 // Network
-                mini_network_plot(ui, latest, &data.data);
+                mini_network_plot(ui, latest, &data.data, mini_plot_height);
                 if cols >= 2 { ui.end_row(); }
 
                 // Disk I/O
-                mini_disk_io_plot(ui, latest, &data.data);
+                mini_disk_io_plot(ui, latest, &data.data, mini_plot_height);
                 if cols >= 2 { ui.end_row(); }
             });
 
@@ -125,6 +134,7 @@ fn mini_cpu_plot(
     latest: &SnapshotData,
     snapshots: &[SnapshotData],
     selected_processes: &HashSet<Pid>,
+    plot_height: f32,
 ) {
     ui.vertical(|ui| {
         ui.label("CPU");
@@ -144,7 +154,7 @@ fn mini_cpu_plot(
         let selected_points = selected_cpu_points(snapshots, latest, selected_processes);
 
         Plot::new("dash_cpu")
-            .height(140.0)
+            .height(plot_height)
             .invert_x(true)
             .default_x_bounds(MIN_TIME_SECONDS, max_time)
             .default_y_bounds(MIN_USAGE_PERCENT, MAX_USAGE_PERCENT)
@@ -183,6 +193,7 @@ fn mini_memory_plot(
     latest: &SnapshotData,
     snapshots: &[SnapshotData],
     selected_processes: &HashSet<Pid>,
+    plot_height: f32,
 ) {
     ui.vertical(|ui| {
         ui.label("Memory");
@@ -211,7 +222,7 @@ fn mini_memory_plot(
         let selected_points = selected_memory_points(snapshots, latest, selected_processes);
 
         Plot::new("dash_memory")
-            .height(140.0)
+            .height(plot_height)
             .invert_x(true)
             .default_x_bounds(MIN_TIME_SECONDS, max_time)
             .default_y_bounds(MIN_USAGE_PERCENT, MAX_USAGE_PERCENT)
@@ -239,7 +250,7 @@ fn mini_memory_plot(
 
 // ── Network mini plot ──
 
-fn mini_network_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotData]) {
+fn mini_network_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotData], plot_height: f32) {
     ui.vertical(|ui| {
         ui.label("Network");
         let max_time = max_time_seconds(snapshots, latest);
@@ -263,7 +274,7 @@ fn mini_network_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotDa
         let max_rate = rate_points.iter().flat_map(|(r, t)| [r[1], t[1]]).fold(0.0_f64, f64::max).max(1.0);
 
         Plot::new("dash_network")
-            .height(140.0)
+            .height(plot_height)
             .invert_x(true)
             .default_x_bounds(MIN_TIME_SECONDS, max_time)
             .default_y_bounds(0.0, max_rate * 1.1)
@@ -286,7 +297,7 @@ fn mini_network_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotDa
 
 // ── Disk I/O mini plot ──
 
-fn mini_disk_io_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotData]) {
+fn mini_disk_io_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotData], plot_height: f32) {
     ui.vertical(|ui| {
         ui.label("Disk I/O");
         let max_time = max_time_seconds(snapshots, latest);
@@ -310,7 +321,7 @@ fn mini_disk_io_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotDa
         let max_rate = rate_points.iter().flat_map(|(r, w)| [r[1], w[1]]).fold(0.0_f64, f64::max).max(1.0);
 
         Plot::new("dash_disk_io")
-            .height(140.0)
+            .height(plot_height)
             .invert_x(true)
             .default_x_bounds(MIN_TIME_SECONDS, max_time)
             .default_y_bounds(0.0, max_rate * 1.1)

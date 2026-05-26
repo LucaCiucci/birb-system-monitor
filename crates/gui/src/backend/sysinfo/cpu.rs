@@ -61,11 +61,14 @@ impl BackendPanel for CpuPanel {
             ui.checkbox(&mut self.config.show_per_cpu, "Per core");
         });
 
+        let plot_height = ui.available_height().clamp(100.0, 600.0);
+
         cpu_plot(
             ui,
             &data.data,
             self.config.show_per_cpu,
             &data.process_selection.selected_processes,
+            plot_height,
         );
 
         ui.separator();
@@ -122,6 +125,7 @@ fn cpu_plot(
     snapshots: &[crate::backend::sysinfo::SnapshotData],
     show_per_cpu: bool,
     selected_processes: &HashSet<Pid>,
+    plot_height: f32,
 ) {
     let Some(latest) = snapshots.last() else {
         return;
@@ -144,7 +148,7 @@ fn cpu_plot(
     let selected_points = selected_cpu_points(snapshots, latest, selected_processes);
 
     let plot = Plot::new("sysinfo_cpu_plot")
-        .height(220.0)
+        .height(plot_height)
         .invert_x(true)
         .default_x_bounds(MIN_TIME_SECONDS, max_time_seconds)
         .default_y_bounds(MIN_USAGE_PERCENT, MAX_USAGE_PERCENT)

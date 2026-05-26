@@ -43,7 +43,8 @@ impl BackendPanel for NetworkPanel {
                 ));
             });
 
-            network_plot(ui, &data.data);
+            let plot_height = ui.available_height().clamp(100.0, 600.0);
+            network_plot(ui, &data.data, plot_height);
         } else {
             ui.label("Loading...");
         }
@@ -68,7 +69,7 @@ impl BackendPanel for NetworkPanel {
     }
 }
 
-fn network_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData]) {
+fn network_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], plot_height: f32) {
     let Some(latest) = snapshots.last() else {
         return;
     };
@@ -113,7 +114,7 @@ fn network_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData]) {
         .max(1.0);
 
     let plot = Plot::new("sysinfo_network_plot")
-        .height(220.0)
+        .height(plot_height)
         .invert_x(true)
         .default_x_bounds(MIN_TIME_SECONDS, max_time_seconds)
         .default_y_bounds(0.0, max_rate * 1.1)
