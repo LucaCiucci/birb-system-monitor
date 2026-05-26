@@ -108,7 +108,8 @@ impl BackendPanel for TemperatureChartPanel {
         });
 
         let plot_height = ui.available_height().clamp(100.0, 600.0);
-        temperature_plot(ui, &data.data, &self.config.enabled, plot_height);
+        let min_window = data.config.min_plot_window_secs();
+        temperature_plot(ui, &data.data, &self.config.enabled, plot_height, min_window);
     }
 
     fn save_config(&self) -> anyhow::Result<serde_json::Value> {
@@ -125,12 +126,11 @@ fn temperature_plot(
     ui: &mut egui::Ui,
     snapshots: &[SnapshotData],
     enabled: &BTreeSet<String>,
-    plot_height: f32,
-) {
+    plot_height: f32,    min_window: f64,) {
     let Some(latest) = snapshots.last() else {
         return;
     };
-    let max_time_seconds = max_time_seconds(snapshots, latest);
+    let max_time_seconds = max_time_seconds(snapshots, latest, min_window);
 
     // Collect only enabled labels
     let labels: Vec<&str> = latest
@@ -233,7 +233,7 @@ fn truncate_label(label: &str) -> String {
     }
 }
 
-fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData) -> f64 {
+fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData, min_window: f64) -> f64 {
     snapshots
         .first()
         .map(|oldest| {
@@ -244,6 +244,7 @@ fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData) -> f64 {
                 .max(1.0)
         })
         .unwrap_or(1.0)
+        .max(min_window)
 }
 
 fn format_seconds_ago(seconds_ago: f64) -> String {

@@ -62,6 +62,7 @@ impl BackendPanel for CpuPanel {
         });
 
         let plot_height = ui.available_height().clamp(100.0, 600.0);
+        let min_window = data.config.min_plot_window_secs();
 
         cpu_plot(
             ui,
@@ -70,6 +71,7 @@ impl BackendPanel for CpuPanel {
             self.config.show_per_cpu,
             &data.process_selection.selected_processes,
             plot_height,
+            min_window,
         );
 
         ui.separator();
@@ -111,11 +113,12 @@ fn cpu_plot(
     show_per_cpu: bool,
     selected_processes: &HashSet<Pid>,
     plot_height: f32,
+    min_window: f64,
 ) {
     let Some(latest) = snapshots.last() else {
         return;
     };
-    let max_time_seconds = max_time_seconds(snapshots, latest);
+    let max_time_seconds = max_time_seconds(snapshots, latest, min_window);
 
     let points: PlotPoints = snapshots
         .iter()
@@ -307,6 +310,7 @@ fn total_cpu_layer(
 fn max_time_seconds(
     snapshots: &[crate::backend::sysinfo::SnapshotData],
     latest: &crate::backend::sysinfo::SnapshotData,
+    min_window: f64,
 ) -> f64 {
     snapshots
         .first()
@@ -318,6 +322,7 @@ fn max_time_seconds(
                 .max(1.0)
         })
         .unwrap_or(1.0)
+        .max(min_window)
 }
 
 fn clamp_percent(value: f64) -> f64 {

@@ -69,7 +69,8 @@ impl BackendPanel for MemoryPanel {
                 });
 
             let plot_height = ui.available_height().clamp(100.0, 600.0);
-            memory_plot(ui, &data.data, &data.process_info, &data.process_selection.selected_processes, plot_height);
+            let min_window = data.config.min_plot_window_secs();
+            memory_plot(ui, &data.data, &data.process_info, &data.process_selection.selected_processes, plot_height, min_window);
         } else {
             ui.label("Loading...");
         }
@@ -77,11 +78,11 @@ impl BackendPanel for MemoryPanel {
     }
 }
 
-fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], process_info: &HashMap<Pid, ProcessInfo>, selected_processes: &HashSet<Pid>, plot_height: f32) {
+fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], process_info: &HashMap<Pid, ProcessInfo>, selected_processes: &HashSet<Pid>, plot_height: f32, min_window: f64) {
     let Some(latest) = snapshots.last() else {
         return;
     };
-    let max_time_seconds = max_time_seconds(snapshots, latest);
+    let max_time_seconds = max_time_seconds(snapshots, latest, min_window);
 
     let memory_points: PlotPoints = snapshots
         .iter()
@@ -180,7 +181,7 @@ fn selected_memory_points(
         .collect()
 }
 
-fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData) -> f64 {
+fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData, min_window: f64) -> f64 {
     snapshots
         .first()
         .map(|oldest| {
@@ -191,6 +192,7 @@ fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData) -> f64 {
                 .max(1.0)
         })
         .unwrap_or(1.0)
+        .max(min_window)
 }
 
 fn percent(used: u64, total: u64) -> f64 {

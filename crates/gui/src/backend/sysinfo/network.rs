@@ -44,7 +44,8 @@ impl BackendPanel for NetworkPanel {
             });
 
             let plot_height = ui.available_height().clamp(100.0, 600.0);
-            network_plot(ui, &data.data, plot_height);
+            let min_window = data.config.min_plot_window_secs();
+            network_plot(ui, &data.data, plot_height, min_window);
         } else {
             ui.label("Loading...");
         }
@@ -52,11 +53,11 @@ impl BackendPanel for NetworkPanel {
     }
 }
 
-fn network_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], plot_height: f32) {
+fn network_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], plot_height: f32, min_window: f64) {
     let Some(latest) = snapshots.last() else {
         return;
     };
-    let max_time_seconds = max_time_seconds(snapshots, latest);
+    let max_time_seconds = max_time_seconds(snapshots, latest, min_window);
 
     // Compute rates (bytes per second) from cumulative totals
     let rate_points: Vec<([f64; 2], [f64; 2])> = snapshots
@@ -132,7 +133,7 @@ fn network_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], plot_height: f32)
     });
 }
 
-fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData) -> f64 {
+fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData, min_window: f64) -> f64 {
     snapshots
         .first()
         .map(|oldest| {
@@ -143,6 +144,7 @@ fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData) -> f64 {
                 .max(1.0)
         })
         .unwrap_or(1.0)
+        .max(min_window)
 }
 
 fn format_seconds_ago(seconds_ago: f64) -> String {

@@ -31,8 +31,6 @@ mod settings;
 mod temperature;
 mod temperature_chart;
 
-const MAX_HISTORY_SNAPSHOTS: usize = 600;
-
 pub struct SysinfoBackend {
     state: Arc<Mutex<SysinfoSharedState>>,
     updater: Option<JoinHandle<()>>,
@@ -153,12 +151,33 @@ impl Backend for SysinfoBackend {
 #[derive(Debug, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct SysinfoConfig {
     update_interval: Duration,
+    /// Number of historical readings to keep and display on plots.
+    /// 0 = keep up to 600 (full range).
+    pub max_readings: usize,
+}
+
+impl SysinfoConfig {
+    /// Minimum time window to show on plots, in seconds.
+    /// Returns 0 if `max_readings` is 0 (use full data range).
+    pub fn min_plot_window_secs(&self) -> f64 {
+        if self.max_readings == 0 {
+            0.0
+        } else {
+            self.update_interval.as_secs_f64() * self.max_readings as f64
+        }
+    }
+
+    /// Number of historical snapshots to keep in memory.
+    pub fn max_history_readings(&self) -> usize {
+        if self.max_readings == 0 { 600 } else { self.max_readings }
+    }
 }
 
 impl Default for SysinfoConfig {
     fn default() -> Self {
         Self {
             update_interval: Duration::from_secs(1),
+            max_readings: 60,
         }
     }
 }
@@ -537,7 +556,8 @@ fn worker_thread(state: Arc<Mutex<SysinfoSharedState>>) {
         }
 
         // Trim old data
-        let excess = data.data.len().saturating_sub(MAX_HISTORY_SNAPSHOTS);
+        let max_history = data.config.max_history_readings();
+        let excess = data.data.len().saturating_sub(max_history);
         if excess > 0 {
             data.data.drain(..excess);
             for info in data.process_info.values_mut() {

@@ -27,6 +27,7 @@ impl BackendPanel for SettingsPanel {
 
         let config = data.config.clone();
         let mut interval_secs = config.update_interval.as_secs_f32();
+        let mut readings = config.max_readings;
 
         Grid::new("sysinfo_settings_grid")
             .num_columns(2)
@@ -44,7 +45,26 @@ impl BackendPanel for SettingsPanel {
                 });
                 ui.end_row();
 
-                // Current value display
+                // Readings
+                ui.label("History / plot window:");
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::Slider::new(&mut readings, 0..=600)
+                            .logarithmic(true)
+                            .suffix(" readings"),
+                    );
+                    if readings == 0 {
+                        ui.label("(full range)");
+                    } else {
+                        ui.label(format!(
+                            "≈ {:.0}s",
+                            interval_secs * readings as f32
+                        ));
+                    }
+                });
+                ui.end_row();
+
+                // Current interval display
                 ui.label("Current interval:");
                 ui.label(format!("{:.2} s", interval_secs));
                 ui.end_row();
@@ -52,6 +72,7 @@ impl BackendPanel for SettingsPanel {
 
         let new_config = crate::backend::sysinfo::SysinfoConfig {
             update_interval: Duration::from_secs_f32(interval_secs),
+            max_readings: readings,
         };
 
         if new_config != config {

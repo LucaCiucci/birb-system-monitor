@@ -93,6 +93,7 @@ impl BackendPanel for DashboardPanel {
         let plot_rows = if cols >= 2 { 3 } else { 5 };
         let plot_area = (ui.available_height() - 40.0).max(0.0);
         let mini_plot_height = (plot_area / plot_rows as f32 - 20.0).clamp(80.0, 250.0);
+        let min_window = data.config.min_plot_window_secs();
 
         // -- Responsive grid of mini graphs (equal-width columns via Column::remainder) --
         let row_height = mini_plot_height + 20.0; // plot + label
@@ -104,29 +105,29 @@ impl BackendPanel for DashboardPanel {
                 // Row 1
                 body.row(row_height, |mut row| {
                     row.col(|ui| {
-                        mini_cpu_plot(ui, latest, &data.data, &data.process_info, &data.process_selection.selected_processes, mini_plot_height);
+                        mini_cpu_plot(ui, latest, &data.data, &data.process_info, &data.process_selection.selected_processes, mini_plot_height, min_window);
                     });
                     if cols >= 2 {
                         row.col(|ui| {
-                            mini_memory_plot(ui, latest, &data.data, &data.process_info, &data.process_selection.selected_processes, mini_plot_height);
+                            mini_memory_plot(ui, latest, &data.data, &data.process_info, &data.process_selection.selected_processes, mini_plot_height, min_window);
                         });
                     }
                 });
                 // Row 2
                 body.row(row_height, |mut row| {
                     row.col(|ui| {
-                        mini_network_plot(ui, latest, &data.data, mini_plot_height);
+                        mini_network_plot(ui, latest, &data.data, mini_plot_height, min_window);
                     });
                     if cols >= 2 {
                         row.col(|ui| {
-                            mini_disk_io_plot(ui, latest, &data.data, mini_plot_height);
+                            mini_disk_io_plot(ui, latest, &data.data, mini_plot_height, min_window);
                         });
                     }
                 });
                 // Row 3: Temperature chart
                 body.row(row_height, |mut row| {
                     row.col(|ui| {
-                        mini_temperature_chart(ui, latest, &data.data, mini_plot_height);
+                        mini_temperature_chart(ui, latest, &data.data, mini_plot_height, min_window);
                     });
                     if cols >= 2 {
                         row.col(|_ui| {});
@@ -169,10 +170,11 @@ fn mini_cpu_plot(
     process_info: &HashMap<Pid, ProcessInfo>,
     selected_processes: &HashSet<Pid>,
     plot_height: f32,
+    min_window: f64,
 ) {
     ui.vertical(|ui| {
         ui.label("CPU");
-        let max_time = max_time_seconds(snapshots, latest);
+        let max_time = max_time_seconds(snapshots, latest, min_window);
 
         let points: PlotPoints = snapshots
             .iter()
@@ -229,10 +231,11 @@ fn mini_memory_plot(
     process_info: &HashMap<Pid, ProcessInfo>,
     selected_processes: &HashSet<Pid>,
     plot_height: f32,
+    min_window: f64,
 ) {
     ui.vertical(|ui| {
         ui.label("Memory");
-        let max_time = max_time_seconds(snapshots, latest);
+        let max_time = max_time_seconds(snapshots, latest, min_window);
 
         let memory_points: PlotPoints = snapshots
             .iter()
@@ -285,10 +288,10 @@ fn mini_memory_plot(
 
 // ── Network mini plot ──
 
-fn mini_network_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotData], plot_height: f32) {
+fn mini_network_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotData], plot_height: f32, min_window: f64) {
     ui.vertical(|ui| {
         ui.label("Network");
-        let max_time = max_time_seconds(snapshots, latest);
+        let max_time = max_time_seconds(snapshots, latest, min_window);
 
         let rate_points: Vec<([f64; 2], [f64; 2])> = snapshots
             .windows(2)
@@ -332,10 +335,10 @@ fn mini_network_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotDa
 
 // ── Disk I/O mini plot ──
 
-fn mini_disk_io_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotData], plot_height: f32) {
+fn mini_disk_io_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotData], plot_height: f32, min_window: f64) {
     ui.vertical(|ui| {
         ui.label("Disk I/O");
-        let max_time = max_time_seconds(snapshots, latest);
+        let max_time = max_time_seconds(snapshots, latest, min_window);
 
         let rate_points: Vec<([f64; 2], [f64; 2])> = snapshots
             .windows(2)
@@ -379,7 +382,7 @@ fn mini_disk_io_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotDa
 
 // ── Temperature mini chart ──
 
-fn mini_temperature_chart(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotData], plot_height: f32) {
+fn mini_temperature_chart(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotData], plot_height: f32, min_window: f64) {
     if latest.component_stats.components.is_empty() {
         ui.vertical(|ui| {
             ui.label("Temperature");
@@ -390,7 +393,7 @@ fn mini_temperature_chart(ui: &mut Ui, latest: &SnapshotData, snapshots: &[Snaps
 
     ui.vertical(|ui| {
         ui.label("Temperature");
-        let max_time = max_time_seconds(snapshots, latest);
+        let max_time = max_time_seconds(snapshots, latest, min_window);
 
         // Compute y range
         let mut max_temp = 0.0_f64;
@@ -463,7 +466,7 @@ fn truncate_label(label: &str) -> String {
 
 // ── Helper functions ──
 
-fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData) -> f64 {
+fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData, min_window: f64) -> f64 {
     snapshots
         .first()
         .map(|oldest| {
@@ -474,6 +477,7 @@ fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData) -> f64 {
                 .max(1.0)
         })
         .unwrap_or(1.0)
+        .max(min_window)
 }
 
 fn clamp_percent(value: f64) -> f64 {
