@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="16" fill="#1a1a2e"/>
+  <!-- CPU graph line -->
+  <polyline points="8,100 20,80 32,88 44,60 56,72 68,40 80,50 92,28 104,36 120,20"
+            fill="none" stroke="#64b5f6" stroke-width="3" stroke-linecap="round"/>
+  <!-- Memory graph area -->
+  <polyline points="8,100 20,90 32,94 44,78 56,82 68,65 80,70 92,55 104,60 120,48"
+            fill="none" stroke="#81c784" stroke-width="3" stroke-linecap="round"/>
+  <!-- Network -->
+  <polyline points="8,100 20,94 32,96 44,85 56,88 68,75 80,78 92,62 104,66 120,55"
+            fill="none" stroke="#ffb74d" stroke-width="3" stroke-linecap="round"/>
+  <!-- Small bird silhouette -->
+  <text x="64" y="120" text-anchor="middle" font-size="14" fill="#888" font-family="sans-serif">birb</text>
+</svg>

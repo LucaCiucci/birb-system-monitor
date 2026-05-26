@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Birb System Monitor
+Comment=System monitor with CPU, memory, network, disk, and temperature graphs
+Exec=birb-monitor
+Icon=birb-system-monitor
+Terminal=false
+Type=Application
+#StartupWMClass=birb-system-monitor-gui
+StartupWMClass=birb-monitor
+Categories=System;Monitor;
