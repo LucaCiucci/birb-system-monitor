@@ -38,6 +38,7 @@ struct Config {
     sort_by: ProcessColumn,
     sort_direction: SortDirection,
     show_threads: bool,
+    tree_view: bool,
 }
 
 impl Default for Config {
@@ -53,6 +54,7 @@ impl Default for Config {
             sort_by: ProcessColumn::CpuUsage,
             sort_direction: SortDirection::Descending,
             show_threads: false,
+            tree_view: false,
         }
     }
 }
@@ -131,36 +133,40 @@ impl BackendPanel for ProcessesPanel {
 
         // --- Gather data ---
         let process_count;
-        let (pids, selected) = match &self.freeze {
+        let (pids, depth_map, selected) = match &self.freeze {
             FreezeState::Pin(frozen_pids) => {
                 // Frozen PID list + frozen sort order. Only filter out dead processes.
                 let state = self.state.lock();
                 let alive: HashSet<Pid> = state.process_info.keys().copied().collect();
-                let pids: Vec<Pid> = frozen_pids.iter().filter(|p| alive.contains(p)).copied().collect();
+                let mut pids: Vec<Pid> = frozen_pids.iter().filter(|p| alive.contains(p)).copied().collect();
                 process_count = state.process_info.len();
                 let selected = state.process_selection.selected_processes.clone();
-                (pids, selected)
+                let depth_map = self.reorder_to_tree(&mut pids, &state.process_info);
+                (pids, depth_map, selected)
             }
             FreezeState::Pause(held) => {
                 process_count = held.len();
-                let pids = self.list_pids(held);
+                let mut pids = self.list_pids(held);
                 let selected: HashSet<Pid> = held.keys().copied().collect();
-                (pids, selected)
+                let depth_map = self.reorder_to_tree(&mut pids, held);
+                (pids, depth_map, selected)
             }
             FreezeState::Live => {
                 let mut state = self.state.lock();
                 let existing_pids: HashSet<Pid> = state.process_info.keys().copied().collect();
                 state.process_selection.retain_existing_pids(&existing_pids);
                 process_count = state.process_info.len();
-                let pids = self.list_pids(&state.process_info);
+                let mut pids = self.list_pids(&state.process_info);
                 let selected = state.process_selection.selected_processes.clone();
-                (pids, selected)
+                let depth_map = self.reorder_to_tree(&mut pids, &state.process_info);
+                (pids, depth_map, selected)
             }
         };
 
         // --- UI controls ---
         ui.horizontal(|ui| {
             ui.add(Checkbox::new(&mut self.config.show_threads, "Show threads"));
+            ui.add(Checkbox::new(&mut self.config.tree_view, "Tree view"));
             let mut ms = self.state.lock().process_selection.multiple_selection;
             if ui.add(Checkbox::new(&mut ms, "Multiple selection")).changed() {
                 let mut state = self.state.lock();
@@ -218,7 +224,7 @@ impl BackendPanel for ProcessesPanel {
             FreezeState::Pause(_) => {
                 // Take, use, and restore to avoid borrow conflict
                 if let FreezeState::Pause(held) = std::mem::replace(&mut self.freeze, FreezeState::Live) {
-                    let result = self.table(&held, ui, &pids, &selected);
+                    let result = self.table(&held, ui, &pids, &selected, &depth_map);
                     self.freeze = FreezeState::Pause(held);
                     result
                 } else {
@@ -228,7 +234,7 @@ impl BackendPanel for ProcessesPanel {
             _ => {
                 // Live or Pin: read live data from state
                 let state = state_arc.lock();
-                self.table(&state.process_info, ui, &pids, &selected)
+                self.table(&state.process_info, ui, &pids, &selected, &depth_map)
             }
         };
         if let Some(clicked_pid) = clicked_pid {
@@ -250,6 +256,74 @@ impl BackendPanel for ProcessesPanel {
 }
 
 impl ProcessesPanel {
+    /// If tree_view is enabled, reorders `pids` into tree order (parents before children)
+    /// and returns a map of pid → depth. Otherwise returns an empty map.
+    fn reorder_to_tree(&self, pids: &mut Vec<Pid>, process_info: &HashMap<Pid, ProcessInfo>) -> HashMap<Pid, usize> {
+        if !self.config.tree_view {
+            return HashMap::new();
+        }
+
+        let pid_set: HashSet<Pid> = pids.iter().copied().collect();
+
+        // Build parent → children map
+        let mut children: HashMap<Pid, Vec<Pid>> = HashMap::new();
+        let mut roots = Vec::new();
+
+        for &pid in pids.iter() {
+            let info = &process_info[&pid];
+            if let Some(parent) = info.detail.parent {
+                if pid_set.contains(&parent) {
+                    children.entry(parent).or_default().push(pid);
+                    continue;
+                }
+            }
+            roots.push(pid);
+        }
+
+        // Sort within each parent by current sort strategy
+        for siblings in children.values_mut() {
+            self.sort_pids(siblings, process_info);
+        }
+        // Also sort roots
+        self.sort_pids(&mut roots, process_info);
+
+        // Flatten tree into PID order and build depth map
+        let mut ordered = Vec::with_capacity(pids.len());
+        let mut depth_map = HashMap::new();
+
+        fn flatten(
+            pid: Pid,
+            depth: usize,
+            children: &HashMap<Pid, Vec<Pid>>,
+            ordered: &mut Vec<Pid>,
+            depth_map: &mut HashMap<Pid, usize>,
+        ) {
+            ordered.push(pid);
+            depth_map.insert(pid, depth);
+            if let Some(kids) = children.get(&pid) {
+                for &child in kids {
+                    flatten(child, depth + 1, children, ordered, depth_map);
+                }
+            }
+        }
+
+        for &root in &roots {
+            flatten(root, 0, &children, &mut ordered, &mut depth_map);
+        }
+
+        // Remaining PIDs that weren't reached (orphans / cycles)
+        let remaining: HashSet<Pid> = pids.iter().copied().collect::<HashSet<_>>()
+            .difference(&depth_map.keys().copied().collect::<HashSet<_>>())
+            .copied().collect();
+        for &pid in &remaining {
+            ordered.push(pid);
+            depth_map.insert(pid, 0);
+        }
+
+        *pids = ordered;
+        depth_map
+    }
+
     fn list_pids(&self, process_info: &HashMap<Pid, ProcessInfo>) -> Vec<Pid> {
         let mut pids: Vec<Pid> = process_info
             .iter()
@@ -317,6 +391,7 @@ impl ProcessesPanel {
         ui: &mut Ui,
         pids: &[Pid],
         selected_processes: &std::collections::HashSet<Pid>,
+        depth_map: &HashMap<Pid, usize>,
     ) -> Option<Pid> {
         let available_height = ui.available_height();
         let text_height = egui::TextStyle::Body
@@ -366,11 +441,12 @@ impl ProcessesPanel {
                     let pid = pids[i];
                     if let Some(info) = process_info.get(&pid) {
                         let selected = selected_processes.contains(&pid);
+                        let depth = depth_map.get(&pid).copied().unwrap_or(0);
                         row.set_selected(selected);
                         let mut clicked = false;
                         for column in &self.config.columns {
                             let (_, response) = row.col(|ui| {
-                                column.show(info, ui);
+                                column.show(info, ui, depth);
                             });
                             clicked |= response.clicked();
                         }
@@ -443,14 +519,20 @@ impl ProcessColumn {
         }
     }
 
-    fn show(&self, info: &ProcessInfo, ui: &mut Ui) {
+    fn show(&self, info: &ProcessInfo, ui: &mut Ui, depth: usize) {
         let latest_metrics = info.metrics.back().copied().unwrap_or_default();
+        let indent = "  ".repeat(depth);
         match self {
             ProcessColumn::Pid => {
                 ui.label(format!("{}", info.detail.pid));
             }
             ProcessColumn::Name => {
-                ui.label(info.detail.name.as_str());
+                let label = if depth > 0 {
+                    format!("{indent}⤷ {}", info.detail.name)
+                } else {
+                    info.detail.name.to_string()
+                };
+                ui.label(label);
             }
             ProcessColumn::CpuUsage => {
                 ui.label(format!("{:.1}%", latest_metrics.cpu_usage));

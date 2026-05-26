@@ -436,6 +436,7 @@ impl Default for ProcessMetrics {
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct ProcessDetail {
     pub(super) pid: Pid,
+    pub(super) parent: Option<Pid>,
     pub(super) name: Ustr,
     pub(super) cmd: VecDeque<Ustr>,
     pub(super) cwd: Option<Ustr>,
@@ -450,6 +451,7 @@ impl ProcessDetail {
     fn from_process(process: &sysinfo::Process) -> Self {
         Self {
             pid: process.pid(),
+            parent: process.parent(),
             name: process.name().to_string_lossy().into(),
             cmd: process
                 .cmd()
