@@ -7,6 +7,7 @@ use egui::{Ui, WidgetText};
 use serde::{Deserialize, Serialize};
 pub mod tabs;
 pub mod widgets;
+pub mod save;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PanelId {
@@ -26,7 +27,7 @@ impl PanelId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BackendId(pub EcoString);
 
 impl Display for BackendId {
@@ -35,18 +36,62 @@ impl Display for BackendId {
     }
 }
 
+impl Serialize for BackendId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for BackendId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(BackendId(s.into()))
+    }
+}
+
 pub trait Backend {
     fn name(&self) -> WidgetText;
+    fn save_config(&self) -> anyhow::Result<serde_json::Value> {
+        Ok(serde_json::Value::Null)
+    }
+    fn load_config(&mut self, _config: &serde_json::Value) -> anyhow::Result<()> {
+        Ok(())
+    }
     fn panels(&self) -> Vec<BackendPanelInfo>;
     fn new_panel(&self, panel_id: &BackendPanelId) -> Box<dyn BackendPanel>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BackendPanelId(pub EcoString);
 
 impl Display for BackendPanelId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl Serialize for BackendPanelId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for BackendPanelId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(BackendPanelId(s.into()))
     }
 }
 
@@ -60,5 +105,11 @@ pub struct BackendPanelInfo {
 pub trait BackendPanel {
     fn title(&mut self) -> WidgetText;
     fn ui(&mut self, ui: &mut Ui);
+    fn save_config(&self) -> anyhow::Result<serde_json::Value> {
+        Ok(serde_json::Value::Null)
+    }
+    fn load_config(&mut self, _config: &serde_json::Value) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 

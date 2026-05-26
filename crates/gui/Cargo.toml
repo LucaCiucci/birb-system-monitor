@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.102"
+deser-hjson = "2.2.5"
 ecow = { version = "0.2.7", features = ["serde"] }
 eframe = { version = "0.34.2", default-features = false, features = [
     "accesskit",
@@ -30,10 +31,18 @@ egui = "0.34.2"
 egui_dock = { version = "0.19.1", features = ["serde"] }
 egui_extras = "0.34.2"
 egui_plot = "=0.35.0"
+env_logger = "0.11.10"
+erased-serde = "0.4.10"
 human-units = "0.5.3"
 ordered_hash_map = { version = "0.6.0", features = ["serde"] }
+ron = "0.12.1"
 serde = { version = "1.0.228", features = ["derive"] }
+serde-hjson = "1.1.0"
 serde_json = "1.0.150"
+serde_yaml = "0.9.34"
 sysinfo = "0.38.4"
+toml = "1.1.2"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
 ustr = "1.1.0"
 uuid = { version = "1.23.1", features = ["v4"] }

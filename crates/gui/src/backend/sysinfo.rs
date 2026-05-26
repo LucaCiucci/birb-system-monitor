@@ -6,6 +6,7 @@ use std::{
 };
 
 use egui::{mutex::Mutex, WidgetText};
+use serde::{Deserialize, Serialize};
 use sysinfo::{DiskUsage, Gid, Pid, ProcessesToUpdate, System, Uid};
 use ustr::Ustr;
 
@@ -60,6 +61,15 @@ impl Backend for SysinfoBackend {
         "Sysinfo".into()
     }
 
+    fn save_config(&self) -> anyhow::Result<serde_json::Value> {
+        Ok(serde_json::to_value(&self.state.lock().config)?)
+    }
+
+    fn load_config(&mut self, config: &serde_json::Value) -> anyhow::Result<()> {
+        self.state.lock().config = serde_json::from_value(config.clone())?;
+        Ok(())
+    }
+
     fn panels(&self) -> Vec<BackendPanelInfo> {
         vec![
             BackendPanelInfo {
@@ -96,7 +106,7 @@ impl Backend for SysinfoBackend {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct SysinfoConfig {
     update_interval: Duration,
 }
@@ -109,7 +119,6 @@ impl Default for SysinfoConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
 pub(super) struct SysinfoSharedState {
     config: SysinfoConfig,
     process_selection: ProcessSelection,

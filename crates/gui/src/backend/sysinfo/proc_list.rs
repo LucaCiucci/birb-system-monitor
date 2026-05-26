@@ -19,6 +19,7 @@ pub(super) struct ProcessesPanel {
     state: Arc<Mutex<SysinfoSharedState>>,
 }
 
+#[derive(Serialize, Deserialize)]
 struct Config {
     filter: String,
     columns: Vec<ProcessColumn>,
@@ -141,6 +142,15 @@ impl BackendPanel for ProcessesPanel {
         if let Some(clicked_pid) = clicked_pid {
             state.process_selection.select_process(clicked_pid);
         }
+    }
+
+    fn save_config(&self) -> anyhow::Result<serde_json::Value> {
+        Ok(serde_json::to_value(&self.config)?)
+    }
+
+    fn load_config(&mut self, config: &serde_json::Value) -> anyhow::Result<()> {
+        self.config = serde_json::from_value(config.clone())?;
+        Ok(())
     }
 }
 
@@ -344,7 +354,7 @@ impl ProcessColumn {
             }
             ProcessColumn::CpuTime => {
                 ui.label(format!(
-                    "{:.1}s",
+                    "{:.2}",
                     process.accumulated_cpu_time.format_duration()
                 ));
             }

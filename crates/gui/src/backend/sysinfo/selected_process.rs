@@ -2,22 +2,34 @@ use std::{collections::HashSet, fmt::Display, sync::Arc};
 
 use egui::{mutex::Mutex, Grid, RichText, WidgetText};
 use human_units::{FormatDuration, FormatSize};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     backend::sysinfo::{ProcessSnapshot, SysinfoSharedState},
     BackendPanel,
 };
 
+#[derive(Serialize, Deserialize)]
+struct SelectedProcessPanelConfig {
+    selected_index: usize,
+}
+
+impl Default for SelectedProcessPanelConfig {
+    fn default() -> Self {
+        Self { selected_index: 0 }
+    }
+}
+
 pub(super) struct SelectedProcessPanel {
     state: Arc<Mutex<SysinfoSharedState>>,
-    selected_index: usize,
+    config: SelectedProcessPanelConfig,
 }
 
 impl SelectedProcessPanel {
     pub(super) fn new(state: Arc<Mutex<SysinfoSharedState>>) -> Self {
         Self {
             state,
-            selected_index: 0,
+            config: SelectedProcessPanelConfig::default(),
         }
     }
 }
@@ -54,7 +66,7 @@ impl BackendPanel for SelectedProcessPanel {
             if selected_pids.is_empty() {
                 (selected_pids, None)
             } else {
-                let p = selected_pids.get(self.selected_index).and_then(|pid| data.processes.get(&pid).cloned());
+                let p = selected_pids.get(self.config.selected_index).and_then(|pid| data.processes.get(&pid).cloned());
                 (selected_pids, p)
             }
         };
@@ -66,7 +78,7 @@ impl BackendPanel for SelectedProcessPanel {
 
         ui.horizontal(|ui| {
             ui.label("Selected index:");
-            let mut index = self.selected_index + 1;
+            let mut index = self.config.selected_index + 1;
             if ui
                 .add(
                     egui::DragValue::new(&mut index)
@@ -75,7 +87,7 @@ impl BackendPanel for SelectedProcessPanel {
                 )
                 .changed()
             {
-                self.selected_index = index.saturating_sub(1);
+                self.config.selected_index = index.saturating_sub(1);
             }
         });
 
@@ -85,6 +97,15 @@ impl BackendPanel for SelectedProcessPanel {
         };
 
         process_summary(ui, &process);
+    }
+
+    fn save_config(&self) -> anyhow::Result<serde_json::Value> {
+        Ok(serde_json::to_value(&self.config)?)
+    }
+
+    fn load_config(&mut self, _config: &serde_json::Value) -> anyhow::Result<()> {
+        self.config = serde_json::from_value(_config.clone())?;
+        Ok(())
     }
 }
 
@@ -102,6 +123,8 @@ fn process_summary(ui: &mut egui::Ui, process: &ProcessSnapshot) {
     });
 
     ui.separator();
+    let available_width = ui.available_rect_before_wrap();
+    ui.set_max_width(available_width.width());
     Grid::new("selected_process_overview")
         .num_columns(2)
         .striped(true)
@@ -152,6 +175,22 @@ fn process_summary(ui: &mut egui::Ui, process: &ProcessSnapshot) {
                 "Total disk written",
                 process.du.total_written_bytes.format_size(),
             );
+            {
+                ui.label(format!("cmd ({})", process.cmd.len()));
+                ui.collapsing("args", |ui| {
+                    Grid::new("cmd_grid")
+                        .num_columns(1)
+                        .striped(true)
+                        .spacing([16.0, 6.0])
+                        .show(ui, |ui| {
+                            for arg in &process.cmd {
+                                ui.monospace(arg.as_str());
+                                ui.end_row();
+                            }
+                        });
+                });
+                ui.end_row();
+            }
         });
 
     ui.collapsing("Command", |ui| {
@@ -171,7 +210,11 @@ fn process_summary(ui: &mut egui::Ui, process: &ProcessSnapshot) {
 
 fn value_row(ui: &mut egui::Ui, label: &str, value: impl Display) {
     ui.label(RichText::new(label).strong());
-    ui.label(value.to_string());
+    //ui.label(value.to_string());
+    ui.horizontal(|ui| {
+        ui.add(egui::Label::new(value.to_string()).truncate());
+        ui.set_min_width(ui.available_rect_before_wrap().width());
+    });
     ui.end_row();
 }
 

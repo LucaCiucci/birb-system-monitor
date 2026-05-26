@@ -2,6 +2,7 @@ use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use egui::{mutex::Mutex, Color32, Grid, ProgressBar, Stroke, WidgetText};
 use egui_plot::{AxisHints, Corner, FilledArea, Legend, Line, Plot, PlotPoints};
+use serde::{Deserialize, Serialize};
 use sysinfo::Pid;
 
 use crate::{backend::sysinfo::SysinfoSharedState, BackendPanel};
@@ -10,16 +11,29 @@ const MIN_USAGE_PERCENT: f64 = 0.0;
 const MAX_USAGE_PERCENT: f64 = 100.0;
 const MIN_TIME_SECONDS: f64 = 0.0;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CpuPanelConfig {
+    show_per_cpu: bool,
+}
+
+impl Default for CpuPanelConfig {
+    fn default() -> Self {
+        Self {
+            show_per_cpu: true,
+        }
+    }
+}
+
 pub(super) struct CpuPanel {
     state: Arc<Mutex<SysinfoSharedState>>,
-    show_per_cpu: bool,
+    config: CpuPanelConfig,
 }
 
 impl CpuPanel {
     pub(super) fn new(state: Arc<Mutex<SysinfoSharedState>>) -> Self {
         Self {
             state,
-            show_per_cpu: true,
+            config: CpuPanelConfig::default(),
         }
     }
 }
@@ -44,13 +58,13 @@ impl BackendPanel for CpuPanel {
                     .desired_width(180.0)
                     .text(format!("{:.1}%", latest.cpu_stats.global_usage)),
             );
-            ui.checkbox(&mut self.show_per_cpu, "Per core");
+            ui.checkbox(&mut self.config.show_per_cpu, "Per core");
         });
 
         cpu_plot(
             ui,
             &data.data,
-            self.show_per_cpu,
+            self.config.show_per_cpu,
             &data.process_selection.selected_processes,
         );
 
@@ -91,6 +105,15 @@ impl BackendPanel for CpuPanel {
                 self.state.lock().config = config;
             }
         });
+    }
+
+    fn save_config(&self) -> anyhow::Result<serde_json::Value> {
+        Ok(serde_json::to_value(&self.config)?)
+    }
+
+    fn load_config(&mut self, config: &serde_json::Value) -> anyhow::Result<()> {
+        self.config = serde_json::from_value(config.clone())?;
+        Ok(())
     }
 }
 
