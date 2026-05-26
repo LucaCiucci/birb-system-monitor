@@ -7,19 +7,23 @@ use std::{
 
 use egui::{mutex::Mutex, WidgetText};
 use serde::{Deserialize, Serialize};
-use sysinfo::{DiskUsage, Gid, Pid, ProcessesToUpdate, System, Uid};
+use sysinfo::{DiskUsage, Disks, Gid, Networks, Pid, ProcessesToUpdate, System, Uid};
 use ustr::Ustr;
 
 use crate::{
     backend::sysinfo::{
-        cpu::CpuPanel, memory::MemoryPanel, proc_list::ProcessesPanel,
+        cpu::CpuPanel, dashboard::DashboardPanel, disk_io::DiskIoPanel,
+        memory::MemoryPanel, network::NetworkPanel, proc_list::ProcessesPanel,
         selected_process::SelectedProcessPanel,
     },
     Backend, BackendPanel, BackendPanelId, BackendPanelInfo,
 };
 
 mod cpu;
+mod dashboard;
+mod disk_io;
 mod memory;
+mod network;
 mod proc_list;
 mod selected_process;
 
@@ -92,6 +96,21 @@ impl Backend for SysinfoBackend {
                 title: "Selected Process".into(),
                 description: "Shows details for a selected process".into(),
             },
+            BackendPanelInfo {
+                id: BackendPanelId("network".into()),
+                title: "Network".into(),
+                description: "Shows network I/O usage".into(),
+            },
+            BackendPanelInfo {
+                id: BackendPanelId("disk-io".into()),
+                title: "Disk I/O".into(),
+                description: "Shows disk I/O usage".into(),
+            },
+            BackendPanelInfo {
+                id: BackendPanelId("dashboard".into()),
+                title: "Dashboard".into(),
+                description: "Shows all graphs in a responsive grid".into(),
+            },
         ]
     }
 
@@ -101,6 +120,9 @@ impl Backend for SysinfoBackend {
             "memory" => Box::new(MemoryPanel::new(self.state.clone())),
             "processes" => Box::new(ProcessesPanel::new(self.state.clone())),
             "selected-process" => Box::new(SelectedProcessPanel::new(self.state.clone())),
+            "network" => Box::new(NetworkPanel::new(self.state.clone())),
+            "disk-io" => Box::new(DiskIoPanel::new(self.state.clone())),
+            "dashboard" => Box::new(DashboardPanel::new(self.state.clone())),
             _ => panic!("Unknown panel id: {}", panel_id.0),
         }
     }
@@ -178,17 +200,21 @@ pub(super) struct SnapshotData {
     captured_at: Instant,
     general_stats: GeneralStats,
     cpu_stats: CpuStats,
+    network_stats: NetworkStats,
+    disk_io_stats: DiskIoStats,
     processes: HashMap<Pid, ProcessSnapshot>,
 }
 
 impl SnapshotData {
-    fn take(sys: &mut System) -> Self {
+    fn take(sys: &mut System, networks: &Networks, disks: &Disks) -> Self {
         sys.refresh_cpu_all();
         sys.refresh_processes(ProcessesToUpdate::All, true);
         Self {
             captured_at: Instant::now(),
             general_stats: GeneralStats::take(sys),
             cpu_stats: CpuStats::take(sys),
+            network_stats: NetworkStats::take(networks),
+            disk_io_stats: DiskIoStats::take(disks),
             processes: sys
                 .processes()
                 .iter()
@@ -247,6 +273,49 @@ impl CpuStats {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub(super) struct NetworkStats {
+    pub(super) total_received: u64,
+    pub(super) total_transmitted: u64,
+}
+
+impl NetworkStats {
+    fn take(networks: &Networks) -> Self {
+        let mut total_received = 0u64;
+        let mut total_transmitted = 0u64;
+        for (_name, data) in networks.iter() {
+            total_received = total_received.saturating_add(data.total_received());
+            total_transmitted = total_transmitted.saturating_add(data.total_transmitted());
+        }
+        Self {
+            total_received,
+            total_transmitted,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub(super) struct DiskIoStats {
+    pub(super) total_read_bytes: u64,
+    pub(super) total_written_bytes: u64,
+}
+
+impl DiskIoStats {
+    fn take(disks: &Disks) -> Self {
+        let mut total_read_bytes = 0u64;
+        let mut total_written_bytes = 0u64;
+        for disk in disks.iter() {
+            let usage = disk.usage();
+            total_read_bytes = total_read_bytes.saturating_add(usage.total_read_bytes);
+            total_written_bytes = total_written_bytes.saturating_add(usage.total_written_bytes);
+        }
+        Self {
+            total_read_bytes,
+            total_written_bytes,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct ProcessSnapshot {
     pub(super) pid: Pid,
@@ -288,6 +357,8 @@ impl ProcessSnapshot {
 
 fn worker_thread(state: Arc<Mutex<SysinfoSharedState>>) {
     let mut sys = System::new_all();
+    let mut networks = Networks::new_with_refreshed_list();
+    let mut disks = Disks::new_with_refreshed_list();
 
     loop {
         let (cx, update_interval) = {
@@ -298,7 +369,10 @@ fn worker_thread(state: Arc<Mutex<SysinfoSharedState>>) {
             (data.cx.clone(), data.config.update_interval)
         };
 
-        let snapshot = SnapshotData::take(&mut sys);
+        networks.refresh(true);
+        disks.refresh(false);
+
+        let snapshot = SnapshotData::take(&mut sys, &networks, &disks);
         let mut data = state.lock();
         data.data.push(snapshot);
         let excess = data.data.len().saturating_sub(MAX_HISTORY_SNAPSHOTS);

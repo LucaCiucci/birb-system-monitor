@@ -21,7 +21,7 @@ fn main() -> anyhow::Result<()> {
     info!("Save path: {:?}", save_path);
 
     eframe::run_native(
-        "My egui App",
+        "Birb System Monitor",
         native_options,
         Box::new(|cc| Ok(Box::new(MonitorApp::new(cc)))),
     ).map_err(|e| anyhow::anyhow!("{e}"))?;
