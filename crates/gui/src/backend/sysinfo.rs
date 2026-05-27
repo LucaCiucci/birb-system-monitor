@@ -7,7 +7,7 @@ use std::{
 
 use egui::{mutex::Mutex, WidgetText};
 use serde::{Deserialize, Serialize};
-use sysinfo::{DiskUsage, Disks, Gid, Networks, Pid, ProcessesToUpdate, System, Uid};
+use sysinfo::{DiskUsage, Disks, Gid, Networks, Pid, ProcessesToUpdate, ProcessStatus, System, Uid};
 use ustr::Ustr;
 
 use crate::{
@@ -439,11 +439,22 @@ pub(super) struct ProcessDetail {
     pub(super) parent: Option<Pid>,
     pub(super) name: Ustr,
     pub(super) cmd: VecDeque<Ustr>,
+    pub(super) exe: Option<Ustr>,
+    pub(super) environ: Vec<Ustr>,
     pub(super) cwd: Option<Ustr>,
+    pub(super) root: Option<Ustr>,
     pub(super) accumulated_cpu_time: Duration,
     pub(super) du: DiskUsage,
-    pub(super) effective_group_id: Option<Gid>,
+    pub(super) status: ProcessStatus,
+    pub(super) user_id: Option<Uid>,
     pub(super) effective_user_id: Option<Uid>,
+    pub(super) group_id: Option<Gid>,
+    pub(super) effective_group_id: Option<Gid>,
+    pub(super) start_time: u64,
+    pub(super) run_time: u64,
+    pub(super) session_id: Option<Pid>,
+    pub(super) open_files: Option<usize>,
+    pub(super) open_files_limit: Option<usize>,
     pub(super) thread_kind: Option<sysinfo::ThreadKind>,
 }
 
@@ -458,11 +469,26 @@ impl ProcessDetail {
                 .iter()
                 .map(|s| s.to_string_lossy().into())
                 .collect(),
+            exe: process.exe().map(|p| p.to_string_lossy().into()),
+            environ: process
+                .environ()
+                .iter()
+                .map(|s| s.to_string_lossy().into())
+                .collect(),
             cwd: process.cwd().map(|s| s.to_string_lossy().into()),
+            root: process.root().map(|s| s.to_string_lossy().into()),
             accumulated_cpu_time: Duration::from_millis(process.accumulated_cpu_time()),
             du: process.disk_usage(),
-            effective_group_id: process.effective_group_id(),
+            status: process.status(),
+            user_id: process.user_id().cloned(),
             effective_user_id: process.effective_user_id().cloned(),
+            group_id: process.group_id(),
+            effective_group_id: process.effective_group_id(),
+            start_time: process.start_time(),
+            run_time: process.run_time(),
+            session_id: process.session_id(),
+            open_files: process.open_files(),
+            open_files_limit: process.open_files_limit(),
             thread_kind: process.thread_kind(),
         }
     }

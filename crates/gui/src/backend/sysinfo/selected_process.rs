@@ -131,6 +131,7 @@ fn process_summary(ui: &mut egui::Ui, detail: &ProcessDetail, metrics: &ProcessM
         .show(ui, |ui| {
             value_row(ui, "Name", detail.name.as_str());
             value_row(ui, "PID", detail.pid);
+            value_row(ui, "Status", &format!("{:?}", detail.status));
             value_row(ui, "CPU usage", &format!("{:.1}%", metrics.cpu_usage));
             value_row(
                 ui,
@@ -141,8 +142,27 @@ fn process_summary(ui: &mut egui::Ui, detail: &ProcessDetail, metrics: &ProcessM
             value_row(ui, "Virtual memory", metrics.virtual_memory.format_size());
             value_row(
                 ui,
+                "Executable",
+                option_text(detail.exe.as_deref()).as_str(),
+            );
+            value_row(
+                ui,
                 "Current directory",
                 option_text(detail.cwd.as_deref()).as_str(),
+            );
+            value_row(
+                ui,
+                "Root directory",
+                option_text(detail.root.as_deref()).as_str(),
+            );
+            value_row(
+                ui,
+                "User",
+                &detail
+                    .user_id
+                    .as_ref()
+                    .map(|id| format!("{id:?}"))
+                    .unwrap_or_else(|| "unknown".into()),
             );
             value_row(
                 ui,
@@ -155,12 +175,44 @@ fn process_summary(ui: &mut egui::Ui, detail: &ProcessDetail, metrics: &ProcessM
             );
             value_row(
                 ui,
+                "Group",
+                &detail
+                    .group_id
+                    .as_ref()
+                    .map(|id| format!("{id:?}"))
+                    .unwrap_or_else(|| "unknown".into()),
+            );
+            value_row(
+                ui,
                 "Effective group",
                 &detail
                     .effective_group_id
                     .as_ref()
                     .map(|id| format!("{id:?}"))
                     .unwrap_or_else(|| "unknown".into()),
+            );
+            value_row(
+                ui,
+                "Start time",
+                &format_time(detail.start_time),
+            );
+            value_row(
+                ui,
+                "Run time",
+                &format_duration_secs(detail.run_time),
+            );
+            value_row(
+                ui,
+                "Session ID",
+                &detail
+                    .session_id
+                    .map(|id| format!("{id}"))
+                    .unwrap_or_else(|| "unknown".into()),
+            );
+            value_row(
+                ui,
+                "Open files",
+                &format_open_files(detail.open_files, detail.open_files_limit),
             );
             value_row(ui, "Disk read", detail.du.read_bytes.format_size());
             value_row(ui, "Disk written", detail.du.written_bytes.format_size());
@@ -184,6 +236,22 @@ fn process_summary(ui: &mut egui::Ui, detail: &ProcessDetail, metrics: &ProcessM
                         .show(ui, |ui| {
                             for arg in &detail.cmd {
                                 ui.monospace(arg.as_str());
+                                ui.end_row();
+                            }
+                        });
+                });
+                ui.end_row();
+            }
+            {
+                ui.label(format!("environ ({})", detail.environ.len()));
+                ui.collapsing("vars", |ui| {
+                    Grid::new("environ_grid")
+                        .num_columns(1)
+                        .striped(true)
+                        .spacing([16.0, 4.0])
+                        .show(ui, |ui| {
+                            for var in &detail.environ {
+                                ui.monospace(var.as_str());
                                 ui.end_row();
                             }
                         });
@@ -219,4 +287,81 @@ fn value_row(ui: &mut egui::Ui, label: &str, value: impl Display) {
 
 fn option_text(value: Option<&str>) -> String {
     value.unwrap_or("unknown").into()
+}
+
+fn format_time(epoch_secs: u64) -> String {
+    // Convert epoch seconds to a readable date/time
+    let secs_per_day = 86400u64;
+    let secs_per_hour = 3600u64;
+    let secs_per_min = 60u64;
+
+    let days = epoch_secs / secs_per_day;
+    let remaining = epoch_secs % secs_per_day;
+    let hours = remaining / secs_per_hour;
+    let remaining = remaining % secs_per_hour;
+    let minutes = remaining / secs_per_min;
+    let seconds = remaining % secs_per_min;
+
+    // days since epoch
+    // Approximate year/month/day from days since epoch (1970-01-01)
+    // Good enough for display purposes
+    let mut y = 1970i64;
+    let mut remaining_days = days as i64;
+    loop {
+        let days_in_year = if is_leap(y) { 366 } else { 365 };
+        if remaining_days < days_in_year {
+            break;
+        }
+        remaining_days -= days_in_year;
+        y += 1;
+    }
+    let months_days = if is_leap(y) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+    let mut m = 1usize;
+    for &md in &months_days {
+        if remaining_days < md {
+            break;
+        }
+        remaining_days -= md;
+        m += 1;
+    }
+    let d = remaining_days + 1;
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        y, m, d, hours, minutes, seconds
+    )
+}
+
+fn is_leap(year: i64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+fn format_duration_secs(total_secs: u64) -> String {
+    let days = total_secs / 86400;
+    let remaining = total_secs % 86400;
+    let hours = remaining / 3600;
+    let remaining = remaining % 3600;
+    let minutes = remaining / 60;
+    let seconds = remaining % 60;
+    if days > 0 {
+        format!("{days}d {hours}h {minutes}m {seconds}s")
+    } else if hours > 0 {
+        format!("{hours}h {minutes}m {seconds}s")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds}s")
+    } else {
+        format!("{seconds}s")
+    }
+}
+
+fn format_open_files(current: Option<usize>, limit: Option<usize>) -> String {
+    match (current, limit) {
+        (Some(c), Some(l)) => format!("{c} / {l}"),
+        (Some(c), None) => format!("{c}"),
+        (None, Some(l)) => format!("? / {l}"),
+        (None, None) => "unknown".into(),
+    }
 }
