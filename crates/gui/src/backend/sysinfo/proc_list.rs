@@ -265,31 +265,26 @@ impl ProcessesPanel {
         let pid_set: HashSet<Pid> = pids.iter().copied().collect();
 
         // Build parent → children map
-        let mut children = Self::build_children_map(&pid_set, process_info);
-        let mut roots: Vec<Pid> = pids
-            .iter()
-            .copied()
-            .filter(|&pid| {
-                !process_info[&pid]
-                    .detail
-                    .parent
-                    .is_some_and(|parent| pid_set.contains(&parent))
-            })
-            .collect();
+        let mut children: HashMap<Pid, Vec<Pid>> = HashMap::new();
+        let mut roots = Vec::new();
 
-        // Pre-compute cumulative sort values once for all sort_pids calls
-        let cum_values = if Self::is_numeric_column(self.config.sort_by) {
-            Some(self.cumulative_sort_values(&pid_set, process_info))
-        } else {
-            None
-        };
+        for &pid in pids.iter() {
+            let info = &process_info[&pid];
+            if let Some(parent) = info.detail.parent {
+                if pid_set.contains(&parent) {
+                    children.entry(parent).or_default().push(pid);
+                    continue;
+                }
+            }
+            roots.push(pid);
+        }
 
         // Sort within each parent by current sort strategy
         for siblings in children.values_mut() {
-            self.sort_pids(siblings, process_info, cum_values.as_ref());
+            self.sort_pids(siblings, process_info);
         }
         // Also sort roots
-        self.sort_pids(&mut roots, process_info, cum_values.as_ref());
+        self.sort_pids(&mut roots, process_info);
 
         // Flatten tree into PID order and build depth map
         let mut ordered = Vec::with_capacity(pids.len());
@@ -345,13 +340,7 @@ impl ProcessesPanel {
             });
         }
 
-        let cum_values = if self.config.tree_view && Self::is_numeric_column(self.config.sort_by) {
-            let pid_set: HashSet<Pid> = pids.iter().copied().collect();
-            Some(self.cumulative_sort_values(&pid_set, process_info))
-        } else {
-            None
-        };
-        self.sort_pids(&mut pids, process_info, cum_values.as_ref());
+        self.sort_pids(&mut pids, process_info);
 
         if self.config.sort_direction == SortDirection::Ascending {
             pids.reverse();
@@ -360,103 +349,8 @@ impl ProcessesPanel {
         pids
     }
 
-    fn is_numeric_column(column: ProcessColumn) -> bool {
-        matches!(
-            column,
-            ProcessColumn::CpuUsage | ProcessColumn::CpuTime | ProcessColumn::MemoryUsage
-        )
-    }
-
-    /// Build a PID → children map from process_info, respecting the visible set.
-    fn build_children_map(
-        pid_set: &HashSet<Pid>,
-        process_info: &HashMap<Pid, ProcessInfo>,
-    ) -> HashMap<Pid, Vec<Pid>> {
-        let mut children: HashMap<Pid, Vec<Pid>> = HashMap::new();
-        for (&pid, info) in process_info {
-            if let Some(parent) = info.detail.parent {
-                if pid_set.contains(&parent) {
-                    children.entry(parent).or_default().push(pid);
-                }
-            }
-        }
-        children
-    }
-
-    /// For numeric columns in tree view: return a map of each PID's own value
-    /// + the sum of all its descendants' values.
-    fn cumulative_sort_values(
-        &self,
-        pid_set: &HashSet<Pid>,
-        process_info: &HashMap<Pid, ProcessInfo>,
-    ) -> HashMap<Pid, f64> {
-        let children = Self::build_children_map(pid_set, process_info);
-
-        fn sum_descendants(
-            pid: Pid,
-            process_info: &HashMap<Pid, ProcessInfo>,
-            children: &HashMap<Pid, Vec<Pid>>,
-            cache: &mut HashMap<Pid, f64>,
-            sort_by: ProcessColumn,
-        ) -> f64 {
-            if let Some(&cached) = cache.get(&pid) {
-                return cached;
-            }
-            let own = match sort_by {
-                ProcessColumn::CpuUsage => {
-                    process_info
-                        .get(&pid)
-                        .and_then(|info| info.metrics.back())
-                        .map(|m| m.cpu_usage as f64)
-                        .unwrap_or(0.0)
-                }
-                ProcessColumn::CpuTime => process_info
-                    .get(&pid)
-                    .map(|info| info.detail.accumulated_cpu_time.as_secs_f64())
-                    .unwrap_or(0.0),
-                ProcessColumn::MemoryUsage => {
-                    process_info
-                        .get(&pid)
-                        .and_then(|info| info.metrics.back())
-                        .map(|m| m.memory as f64)
-                        .unwrap_or(0.0)
-                }
-                _ => 0.0,
-            };
-            let children_sum: f64 = children
-                .get(&pid)
-                .map(|kids| {
-                    kids.iter()
-                        .map(|&child| sum_descendants(child, process_info, children, cache, sort_by))
-                        .sum()
-                })
-                .unwrap_or(0.0);
-            let total = own + children_sum;
-            cache.insert(pid, total);
-            total
-        }
-
-        let mut cache = HashMap::new();
-        for (&pid, _) in process_info {
-            sum_descendants(
-                pid,
-                process_info,
-                &children,
-                &mut cache,
-                self.config.sort_by,
-            );
-        }
-        cache
-    }
-
-    fn sort_pids(
-        &self,
-        pids: &mut [Pid],
-        process_info: &HashMap<Pid, ProcessInfo>,
-        cum_values: Option<&HashMap<Pid, f64>>,
-    ) {
+    fn sort_pids(&self, pids: &mut [Pid], process_info: &HashMap<Pid, ProcessInfo>) {
         pids.sort();
-
         match self.config.sort_by {
             ProcessColumn::Pid => {
                 pids.sort_by_key(|pid| *pid);
@@ -465,58 +359,27 @@ impl ProcessesPanel {
                 pids.sort_by_key(|pid| process_info[pid].detail.name.clone());
             }
             ProcessColumn::CpuUsage => {
-                if let Some(ref cum) = cum_values {
-                    pids.sort_by(|a, b| {
-                        cum.get(b)
-                            .unwrap_or(&0.0)
-                            .partial_cmp(cum.get(a).unwrap_or(&0.0))
-                            .unwrap()
-                    });
-                } else {
-                    pids.sort_by(|a, b| {
-                        let latest_a =
-                            process_info[a].metrics.back().map(|m| m.cpu_usage).unwrap_or(0.0);
-                        let latest_b =
-                            process_info[b].metrics.back().map(|m| m.cpu_usage).unwrap_or(0.0);
-                        latest_b.partial_cmp(&latest_a).unwrap()
-                    });
-                }
+                pids.sort_by(|a, b| {
+                    let latest_a = process_info[a].metrics.back().map(|m| m.cpu_usage).unwrap_or(0.0);
+                    let latest_b = process_info[b].metrics.back().map(|m| m.cpu_usage).unwrap_or(0.0);
+                    latest_b.partial_cmp(&latest_a).unwrap()
+                });
             }
             ProcessColumn::CpuTime => {
-                if let Some(ref cum) = cum_values {
-                    pids.sort_by(|a, b| {
-                        cum.get(b)
-                            .unwrap_or(&0.0)
-                            .partial_cmp(cum.get(a).unwrap_or(&0.0))
-                            .unwrap()
-                    });
-                } else {
-                    pids.sort_by(|a, b| {
-                        process_info[b]
-                            .detail
-                            .accumulated_cpu_time
-                            .partial_cmp(&process_info[a].detail.accumulated_cpu_time)
-                            .unwrap()
-                    });
-                }
+                pids.sort_by(|a, b| {
+                    process_info[b]
+                        .detail
+                        .accumulated_cpu_time
+                        .partial_cmp(&process_info[a].detail.accumulated_cpu_time)
+                        .unwrap()
+                });
             }
             ProcessColumn::MemoryUsage => {
-                if let Some(ref cum) = cum_values {
-                    pids.sort_by(|a, b| {
-                        cum.get(b)
-                            .unwrap_or(&0.0)
-                            .partial_cmp(cum.get(a).unwrap_or(&0.0))
-                            .unwrap()
-                    });
-                } else {
-                    pids.sort_by(|a, b| {
-                        let latest_a =
-                            process_info[a].metrics.back().map(|m| m.memory).unwrap_or(0);
-                        let latest_b =
-                            process_info[b].metrics.back().map(|m| m.memory).unwrap_or(0);
-                        latest_b.cmp(&latest_a)
-                    });
-                }
+                pids.sort_by(|a, b| {
+                    let latest_a = process_info[a].metrics.back().map(|m| m.memory).unwrap_or(0);
+                    let latest_b = process_info[b].metrics.back().map(|m| m.memory).unwrap_or(0);
+                    latest_b.cmp(&latest_a)
+                });
             }
         }
     }
