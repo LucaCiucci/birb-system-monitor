@@ -8,6 +8,9 @@ deb:
 install-deb: deb
     sudo dpkg -i target/debian/birb-monitor_*.deb
 
+uninstall-deb:
+    sudo dpkg -r birb-monitor
+
 # Build a Flatpak using flatpak-builder
 flatpak:
     flatpak-builder --force-clean --install-deps-from=flathub build-dir flatpak/io.github.luciu.birb-monitor.yml
