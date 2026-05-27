@@ -241,7 +241,7 @@ impl eframe::App for MonitorApp {
     }
 
     fn auto_save_interval(&self) -> std::time::Duration {
-        Duration::from_secs(1)
+        Duration::from_secs(5)
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
