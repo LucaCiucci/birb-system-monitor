@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, str::FromStr};
 
 pub mod backend;
 
@@ -19,6 +19,21 @@ pub struct PanelId {
 impl Display for PanelId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}/{}", self.backend, self.panel)
+    }
+}
+
+impl FromStr for PanelId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.splitn(2, '/').collect();
+        if parts.len() != 2 {
+            return Err(format!("Invalid PanelId format: '{}'", s));
+        }
+        Ok(PanelId {
+            backend: BackendId(parts[0].into()),
+            panel: BackendPanelId(parts[1].into()),
+        })
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::{Backend, BackendPanel, BackendPanelId, BackendPanelInfo, widgets::my_table};
+use crate::{Backend, BackendPanel, BackendPanelId, BackendPanelInfo, widgets::placeholder_sentence};
 
 
 pub struct DebugBackend;
@@ -35,6 +35,6 @@ impl BackendPanel for WidgetGalleryPanel {
 
     fn ui(&mut self, ui: &mut egui::Ui) {
         ui.label("This is a widget gallery panel. You can add various widgets here for testing and debugging purposes.");
-        my_table(ui);
+        placeholder_sentence(ui);
     }
 }

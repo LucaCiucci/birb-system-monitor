@@ -1,3 +1,6 @@
+use std::str::FromStr;
+
+use egui_dock::{DockState, NodeIndex};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -11,10 +14,64 @@ pub enum Tab {
     Other(String),
 }
 
-pub fn default_dock_state() -> egui_dock::DockState<Tab> {
-    egui_dock::DockState::new(vec![
-        Tab::Other("Tab 1".to_string()),
-        Tab::Other("Tab 2".to_string()),
-        Tab::Other("Tab 3".to_string()),
-    ])
+impl Tab {
+    pub fn new_from_path(path: &str) -> Result<Self, String> {
+        Ok(Tab::Panel(PanelId::from_str(path)?, Uuid::new_v4()))
+    }
+}
+
+pub fn default_dock_state() -> DockState<Tab> {
+    let panel = |path: &str| -> Tab {
+        Tab::new_from_path(path).unwrap()
+    };
+
+    let mut dock_state = DockState::new(vec![
+        panel("sysinfo/processes"),
+        panel("sysinfo/temperature"),
+    ]);
+
+    let surface = dock_state.main_surface_mut();
+
+    let [_root, right] = surface.split_right(
+        NodeIndex::root(),
+        0.30,
+        vec![panel("sysinfo/cpu")],
+    );
+
+    let [top, bottom] = surface.split_below(
+        right,
+        0.35,
+        vec![
+            panel("sysinfo/selected-process"),
+            panel("sysinfo/settings")],
+    );
+
+    let [_cpu, _mem] = surface.split_right(
+        top,
+        0.50,
+        vec![panel("sysinfo/memory")],
+    );
+
+    let [_bottom_left, net] = surface.split_right(
+        bottom,
+        0.40,
+        vec![panel("sysinfo/network")],
+    );
+
+    let [net, _disk] = surface.split_below(
+        net,
+        0.50,
+        vec![
+            panel("sysinfo/temperature-chart"),
+            panel("sysinfo/temperature"),
+        ],
+    );
+
+    let [_net, _temps] = surface.split_right(
+        net,
+        0.50,
+        vec![panel("sysinfo/disk-io")],
+    );
+
+    dock_state
 }
