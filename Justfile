@@ -5,6 +5,9 @@
 deb:
     cargo deb
 
+install-deb: deb
+    sudo dpkg -i target/debian/birb-monitor_*.deb
+
 # Build a Flatpak using flatpak-builder
 flatpak:
     flatpak-builder --force-clean --install-deps-from=flathub build-dir flatpak/io.github.luciu.birb-monitor.yml
