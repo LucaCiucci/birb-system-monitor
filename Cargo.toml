@@ -18,6 +18,7 @@ edition.workspace = true
 version.workspace = true
 license.workspace = true
 authors.workspace = true
+description = "A cross-platform system monitoring GUI built with egui and sysinfo"
 
 [dependencies]
 anyhow = "1.0.102"
@@ -25,3 +26,14 @@ birb-system-monitor-gui = { path = "crates/gui" }
 clap = { version = "4.6.1", features = ["derive"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
+
+[package.metadata.deb]
+maintainer = "Luca Ciucci"
+depends = ""
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/birb-monitor", "usr/bin/", "755"],
+    ["birb-system-monitor.desktop", "usr/share/applications/", "644"],
+    ["birb-system-monitor.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+]

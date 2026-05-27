@@ -1,0 +1,46 @@
+---
+app-id: io.github.luciu.birb-monitor
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: birb-monitor
+finish-args:
+  # Wayland & X11
+  - --socket=wayland
+  - --socket=x11
+  # IPC for shared memory
+  - --share=ipc
+  # GPU acceleration (OpenGL/Vulkan for egui)
+  - --device=dri
+  # System monitoring: needed to read /proc, /sys, /dev, etc.
+  - --filesystem=host
+  # Network for process info
+  - --share=network
+  # Sound (optional, but common)
+  - --socket=pulseaudio
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/birb-monitor/cargo
+
+modules:
+  - name: birb-monitor
+    buildsystem: simple
+    build-commands:
+      # Build the release binary
+      - cargo fetch --manifest-path Cargo.toml
+      - cargo build --release --manifest-path Cargo.toml --verbose
+      # Install binary
+      - install -Dm755 target/release/birb-monitor -t /app/bin/
+      # Install desktop entry
+      - install -Dm644 birb-system-monitor.desktop -t /app/share/applications/
+      # Install icon
+      - install -Dm644 birb-system-monitor.svg -t /app/share/icons/hicolor/scalable/apps/
+    sources:
+      - type: dir
+        path: /
+        skip:
+          - target
+          - '.flatpak-builder'
+          - '.git'
