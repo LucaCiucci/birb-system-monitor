@@ -1,8 +1,7 @@
 use std::{ops::Not, sync::Arc};
 
 use egui::{
-    mutex::Mutex, Align, Button, Checkbox, Color32, ComboBox, Layout, RichText, Sense, Ui,
-    WidgetText,
+    Align, Button, Checkbox, Color32, ComboBox, Layout, RichText, Sense, Ui, Vec2, WidgetText, mutex::Mutex
 };
 use egui_extras::{Column, TableBuilder};
 use human_units::{FormatDuration, FormatSize};
@@ -444,7 +443,7 @@ impl ProcessesPanel {
                         let depth = depth_map.get(&pid).copied().unwrap_or(0);
                         row.set_selected(selected);
                         let mut clicked = false;
-                        for column in &self.config.columns {
+                        for column in self.config.columns.iter() {
                             let (_, response) = row.col(|ui| {
                                 column.show(info, ui, depth);
                             });
@@ -521,18 +520,24 @@ impl ProcessColumn {
 
     fn show(&self, info: &ProcessInfo, ui: &mut Ui, depth: usize) {
         let latest_metrics = info.metrics.back().copied().unwrap_or_default();
-        let indent = "  ".repeat(depth);
         match self {
             ProcessColumn::Pid => {
                 ui.label(format!("{}", info.detail.pid));
             }
             ProcessColumn::Name => {
-                let label = if depth > 0 {
-                    format!("{indent}⤷ {}", info.detail.name)
-                } else {
-                    info.detail.name.to_string()
-                };
-                ui.label(label);
+                ui.horizontal(|ui| {
+                    for _ in 0..depth {
+                        let (_id, rect) = ui.allocate_space(Vec2::new(10.0, ui.available_height()));
+                        ui.painter().line(
+                            vec![
+                                rect.center_top() - Vec2::new(0.0, 2.0),
+                                rect.center_bottom() + Vec2::new(0.0, 2.0),
+                            ],
+                            egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(128, 128, 128, 128)),
+                        );
+                    }
+                    ui.label(format!("{}", info.detail.name));
+                });
             }
             ProcessColumn::CpuUsage => {
                 ui.label(format!("{:.1}%", latest_metrics.cpu_usage));
