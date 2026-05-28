@@ -121,6 +121,9 @@ pub struct BackendPanelInfo {
 pub trait BackendPanel {
     fn title(&mut self) -> WidgetText;
     fn ui(&mut self, ui: &mut Ui);
+    fn scroll_bars(&self) -> [bool; 2] {
+        [false, true]
+    }
     fn save_config(&self) -> anyhow::Result<serde_json::Value> {
         Ok(serde_json::Value::Null)
     }

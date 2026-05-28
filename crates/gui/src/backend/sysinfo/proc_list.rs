@@ -1,9 +1,13 @@
 use std::{ops::Not, sync::Arc};
 
 use egui::{
-    Align, Button, Checkbox, Color32, ComboBox, Layout, RichText, Sense, Ui, Vec2, WidgetText, mutex::Mutex
+    Button, Checkbox, Color32, ComboBox, RichText, Sense, Ui, Vec2, WidgetText,
+    mutex::Mutex,
 };
-use egui_extras::{Column, TableBuilder};
+use egui_table::{
+    columns::Column,
+    AutoSizeMode, CellInfo, HeaderCellInfo, HeaderRow, Table, TableDelegate,
+};
 use human_units::{FormatDuration, FormatSize};
 use serde::{Deserialize, Serialize};
 use sysinfo::Pid;
@@ -244,6 +248,10 @@ impl BackendPanel for ProcessesPanel {
         }
     }
 
+    fn scroll_bars(&self) -> [bool; 2] {
+        [true, true]
+    }
+
     fn save_config(&self) -> anyhow::Result<serde_json::Value> {
         Ok(serde_json::to_value(&self.config)?)
     }
@@ -392,70 +400,129 @@ impl ProcessesPanel {
         selected_processes: &std::collections::HashSet<Pid>,
         depth_map: &HashMap<Pid, usize>,
     ) -> Option<Pid> {
-        let available_height = ui.available_height();
         let text_height = egui::TextStyle::Body
             .resolve(ui.style())
             .size
             .max(ui.spacing().interact_size.y);
-        let total_rows = pids.len();
+        let total_rows = pids.len() as u64;
 
-        let mut table = TableBuilder::new(ui)
-            .striped(true)
-            .resizable(true)
-            .auto_shrink(false)
-            .cell_layout(Layout::left_to_right(Align::Center));
+        let egui_columns: Vec<Column> = self
+            .config
+            .columns
+            .iter()
+            .map(|col| {
+                let (initial, min, max) = match col {
+                    ProcessColumn::Name => (150.0, 80.0, f32::INFINITY),
+                    _ => (80.0, 30.0, 100.0),
+                };
+                Column::new(initial).resizable(true).range(min..=max)
+            })
+            .collect();
 
-        for column in &self.config.columns {
-            table = table.column(if column == &ProcessColumn::Name {
-                Column::remainder()
-                    .at_least(40.0)
-                    .clip(true)
-                    .resizable(true)
-            } else {
-                Column::auto()
+        let header = HeaderRow::new(40.0);
+
+        let mut delegate = ProcessesTableDelegate {
+            process_info,
+            pids,
+            selected: selected_processes,
+            depth_map,
+            columns: &self.config.columns,
+            sort_by: &mut self.config.sort_by,
+            sort_direction: &mut self.config.sort_direction,
+            clicked_pid: None,
+            row_height: text_height,
+        };
+
+        Table::new()
+            .id_salt("process_table")
+            .num_rows(total_rows)
+            .columns(egui_columns)
+            .headers(vec![header])
+            .auto_size_mode(AutoSizeMode::Always)
+            .show(ui, &mut delegate);
+
+        delegate.clicked_pid
+    }
+}
+
+/// Delegate that renders the process table using `egui_table`.
+struct ProcessesTableDelegate<'a> {
+    process_info: &'a HashMap<Pid, ProcessInfo>,
+    pids: &'a [Pid],
+    selected: &'a HashSet<Pid>,
+    depth_map: &'a HashMap<Pid, usize>,
+    columns: &'a [ProcessColumn],
+    sort_by: &'a mut ProcessColumn,
+    sort_direction: &'a mut SortDirection,
+    clicked_pid: Option<Pid>,
+    row_height: f32,
+}
+
+impl<'a> TableDelegate for ProcessesTableDelegate<'a> {
+    fn header_cell_ui(&mut self, ui: &mut Ui, cell: &HeaderCellInfo) {
+        egui::Frame::new()
+            .inner_margin(egui::Margin::symmetric(4, 0))
+            .show(ui, |ui| {
+                let col_idx = cell.col_range.start;
+                if let Some(column) = self.columns.get(col_idx) {
+                    let sorted = if *self.sort_by == *column {
+                        Some(&mut *self.sort_direction)
+                    } else {
+                        None
+                    };
+                    column.show_header(ui, &mut *self.sort_by, sorted);
+                }
             });
+    }
+
+    fn cell_ui(&mut self, ui: &mut Ui, cell: &CellInfo) {
+        let row_idx = cell.row_nr as usize;
+        let col_idx = cell.col_nr;
+
+        if row_idx >= self.pids.len() || col_idx >= self.columns.len() {
+            return;
         }
 
-        let mut clicked_pid = None;
+        let pid = self.pids[row_idx];
+        if let Some(info) = self.process_info.get(&pid) {
+            let depth = self.depth_map.get(&pid).copied().unwrap_or(0);
+            let column = &self.columns[col_idx];
 
-        table
-            .min_scrolled_height(0.0)
-            .max_scroll_height(available_height)
-            .sense(Sense::click())
-            .header(40.0, |mut header| {
-                for column in &self.config.columns {
-                    header.col(|ui| {
-                        let sorted = if self.config.sort_by == *column {
-                            Some(&mut self.config.sort_direction)
-                        } else {
-                            None
-                        };
-                        column.show_header(ui, &mut self.config.sort_by, sorted);
-                    });
-                }
-            })
-            .body(|body| {
-                body.rows(text_height, total_rows, |mut row| {
-                    let i = row.index();
-                    let pid = pids[i];
-                    if let Some(info) = process_info.get(&pid) {
-                        let selected = selected_processes.contains(&pid);
-                        let depth = depth_map.get(&pid).copied().unwrap_or(0);
-                        row.set_selected(selected);
-                        let mut clicked = false;
-                        for column in self.config.columns.iter() {
-                            let (_, response) = row.col(|ui| {
-                                column.show(info, ui, depth);
-                            });
-                            clicked |= response.clicked();
-                        }
-                        if clicked {
-                            clicked_pid = Some(pid);
-                        }
-                    }
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(4, 0))
+                .show(ui, |ui| {
+                    column.show(info, ui, depth);
                 });
-            });
-        clicked_pid
+
+            // Detect click on this cell
+            let response = ui.interact(
+                ui.min_rect(),
+                ui.id().with("click"),
+                Sense::click(),
+            );
+            if response.clicked() {
+                self.clicked_pid = Some(pid);
+            }
+        }
+    }
+
+    fn row_ui(&mut self, ui: &mut Ui, row_nr: u64) {
+        let row_idx = row_nr as usize;
+        if row_idx < self.pids.len() {
+            let pid = self.pids[row_idx];
+            if self.selected.contains(&pid) {
+                let rect = ui.min_rect();
+                ui.painter().rect_filled(
+                    rect,
+                    0.0,
+                    Color32::from_rgba_premultiplied(64, 64, 128, 64),
+                );
+            }
+        }
+    }
+
+    fn default_row_height(&self) -> f32 {
+        self.row_height
     }
 }
 
@@ -530,8 +597,8 @@ impl ProcessColumn {
                         let (_id, rect) = ui.allocate_space(Vec2::new(10.0, ui.available_height()));
                         ui.painter().line(
                             vec![
-                                rect.center_top() - Vec2::new(0.0, 2.0),
-                                rect.center_bottom() + Vec2::new(0.0, 2.0),
+                                rect.right_top() - Vec2::new(0.0, 2.0),
+                                rect.right_bottom() + Vec2::new(0.0, 2.0),
                             ],
                             egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(128, 128, 128, 128)),
                         );

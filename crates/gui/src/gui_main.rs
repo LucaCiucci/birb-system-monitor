@@ -343,7 +343,17 @@ impl<'a> TabViewer for MyTabViewer<'a> {
         }
     }
 
-    fn scroll_bars(&self, _tab: &Self::Tab) -> [bool; 2] {
-        [false, true]
+    fn scroll_bars(&self, tab: &Self::Tab) -> [bool; 2] {
+        match tab {
+            Tab::Panel(id, _) => {
+                let panel = self.panels.get(&(id.clone(), Uuid::nil()));
+                if let Some(panel) = panel {
+                    panel.scroll_bars()
+                } else {
+                    [false, true]
+                }
+            }
+            Tab::Other(_) => [false, true],
+        }
     }
 }
