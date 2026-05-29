@@ -7,7 +7,9 @@ authors.workspace = true
 
 [dependencies]
 anyhow = "1.0.102"
+bollard = "0.21"
 deser-hjson = "2.2.5"
+tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 ecow = { version = "0.2.7", features = ["serde"] }
 eframe = { version = "0.34.2", default-features = false, features = [
     "accesskit",
