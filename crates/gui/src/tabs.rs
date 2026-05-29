@@ -32,10 +32,19 @@ pub fn default_dock_state() -> DockState<Tab> {
 
     let surface = dock_state.main_surface_mut();
 
-    let [_root, right] = surface.split_right(
+    let [left, right] = surface.split_right(
         NodeIndex::root(),
         0.30,
         vec![panel("sysinfo/cpu")],
+    );
+
+    surface.split_below(
+        left,
+        0.80,
+        vec![
+            panel("docker/containers"),
+            panel("docker/images"),
+        ],
     );
 
     let [top, bottom] = surface.split_below(
