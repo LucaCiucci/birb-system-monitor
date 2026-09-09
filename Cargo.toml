@@ -9,7 +9,7 @@ edition = "2024"
 version = "0.1.0"
 license = "MIT"
 authors = [
-    "Luca Ciucci"
+    "Luca Ciucci <luca.ciucci99@gmail.com>",
 ]
 
 [package]
