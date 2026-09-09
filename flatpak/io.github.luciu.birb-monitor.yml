@@ -36,7 +36,7 @@ modules:
       # Install desktop entry
       - install -Dm644 birb-system-monitor.desktop -t /app/share/applications/
       # Install icon
-      - install -Dm644 birb-system-monitor.svg -t /app/share/icons/hicolor/scalable/apps/
+      - install -Dm644 img/birb-system-monitor.svg -t /app/share/icons/hicolor/scalable/apps/
     sources:
       - type: dir
         path: /
