@@ -33,8 +33,6 @@ egui_dock = { version = "0.19.1", features = ["serde"] }
 egui_extras = "0.34"
 egui_plot = "=0.35.0"
 egui_table = "0.8.0"
-env_logger = "0.11.10"
-erased-serde = "0.4.10"
 fastrand = "2.4.1"
 human-units = "0.5.3"
 itertools = "0.14.0"
