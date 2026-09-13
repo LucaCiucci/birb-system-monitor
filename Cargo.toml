@@ -12,7 +12,7 @@ description = "A cross-platform system monitoring GUI built with egui and sysinf
 anyhow = "1"
 bollard = "0.21"
 clap = { version = "4", features = ["derive"] }
-deser-hjson = "2.2.5"
+#deser-hjson = "2.2.5"
 tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 eframe = { version = "0.34", default-features = false, features = [
     "accesskit",

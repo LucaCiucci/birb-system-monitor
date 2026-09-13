@@ -458,7 +458,6 @@ dependencies = [
  "anyhow",
  "bollard",
  "clap",
- "deser-hjson",
  "ecow",
  "eframe",
  "egui",
@@ -851,15 +850,6 @@ name = "cursor-icon"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
-
-[[package]]
-name = "deser-hjson"
-version = "2.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0d49a923edd92dc1ca5819822f540ea83f094ab5ac6940e4044e03c1d8e6576"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "dispatch"

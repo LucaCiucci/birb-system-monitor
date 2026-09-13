@@ -35,3 +35,9 @@ binary:
 clean:
     cargo clean
     rm -rf build-dir *.AppDir *.AppImage
+
+ci: check-unused-deps
+
+check-unused-deps:
+    cargo +nightly udeps
+    cargo machete
