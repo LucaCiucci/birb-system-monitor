@@ -1,4 +1,7 @@
-use clap::{Parser, builder::{Styles, styling::AnsiColor}};
+use clap::{
+    Parser,
+    builder::{Styles, styling::AnsiColor},
+};
 
 mod gui;
 use gui::gui_main;
@@ -23,7 +26,9 @@ struct Cli {
 
 impl Cli {
     pub fn command(&self) -> Command {
-        self.command.clone().unwrap_or(Command::Gui(Gui { detach: true }))
+        self.command
+            .clone()
+            .unwrap_or(Command::Gui(Gui { detach: true }))
     }
 }
 
@@ -52,9 +57,7 @@ impl Gui {
             gui_main::main()
         } else {
             let this_exe = std::env::current_exe()?;
-            std::process::Command::new(this_exe)
-                .arg("gui")
-                .spawn()?;
+            std::process::Command::new(this_exe).arg("gui").spawn()?;
             Ok(())
         }
     }

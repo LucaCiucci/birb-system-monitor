@@ -1,12 +1,10 @@
 use std::{ops::Not, sync::Arc};
 
 use egui::{
-    Button, Checkbox, Color32, ComboBox, RichText, Sense, Ui, Vec2, WidgetText,
-    mutex::Mutex,
+    Button, Checkbox, Color32, ComboBox, RichText, Sense, Ui, Vec2, WidgetText, mutex::Mutex,
 };
 use egui_table::{
-    columns::Column,
-    AutoSizeMode, CellInfo, HeaderCellInfo, HeaderRow, Table, TableDelegate,
+    AutoSizeMode, CellInfo, HeaderCellInfo, HeaderRow, Table, TableDelegate, columns::Column,
 };
 use human_units::{FormatDuration, FormatSize};
 use serde::{Deserialize, Serialize};
@@ -15,8 +13,8 @@ use sysinfo::Pid;
 use std::collections::{HashMap, HashSet};
 
 use crate::gui::{
-    backend::sysinfo::{ProcessInfo, SysinfoSharedState},
     BackendPanel,
+    backend::sysinfo::{ProcessInfo, SysinfoSharedState},
 };
 
 /// Whether the process list is live, pinned (frozen PID list), or paused (frozen snapshot).
@@ -105,8 +103,11 @@ impl BackendPanel for ProcessesPanel {
 
         ui.horizontal(|ui| {
             // Pin — freezes list order, values still update
-            if ui.selectable_label(is_pinned, if is_pinned { "📌 Pinned" } else { "📌 Pin" })
-                .on_hover_text("Freezes the process list order. CPU% and memory values still update live.")
+            if ui
+                .selectable_label(is_pinned, if is_pinned { "📌 Pinned" } else { "📌 Pin" })
+                .on_hover_text(
+                    "Freezes the process list order. CPU% and memory values still update live.",
+                )
                 .clicked()
             {
                 if is_pinned {
@@ -116,8 +117,11 @@ impl BackendPanel for ProcessesPanel {
                 }
             }
             // Pause — freezes everything
-            if ui.selectable_label(is_paused, if is_paused { "⏸ Paused" } else { "⏸ Pause" })
-                .on_hover_text("Freezes everything — process list, CPU%, memory, all values stop updating.")
+            if ui
+                .selectable_label(is_paused, if is_paused { "⏸ Paused" } else { "⏸ Pause" })
+                .on_hover_text(
+                    "Freezes everything — process list, CPU%, memory, all values stop updating.",
+                )
                 .clicked()
             {
                 if is_paused {
@@ -141,7 +145,11 @@ impl BackendPanel for ProcessesPanel {
                 // Frozen PID list + frozen sort order. Only filter out dead processes.
                 let state = self.state.lock();
                 let alive: HashSet<Pid> = state.process_info.keys().copied().collect();
-                let mut pids: Vec<Pid> = frozen_pids.iter().filter(|p| alive.contains(p)).copied().collect();
+                let mut pids: Vec<Pid> = frozen_pids
+                    .iter()
+                    .filter(|p| alive.contains(p))
+                    .copied()
+                    .collect();
                 process_count = state.process_info.len();
                 let selected = state.process_selection.selected_processes.clone();
                 let depth_map = self.reorder_to_tree(&mut pids, &state.process_info);
@@ -171,7 +179,10 @@ impl BackendPanel for ProcessesPanel {
             ui.add(Checkbox::new(&mut self.config.show_threads, "Show threads"));
             ui.add(Checkbox::new(&mut self.config.tree_view, "Tree view"));
             let mut ms = self.state.lock().process_selection.multiple_selection;
-            if ui.add(Checkbox::new(&mut ms, "Multiple selection")).changed() {
+            if ui
+                .add(Checkbox::new(&mut ms, "Multiple selection"))
+                .changed()
+            {
                 let mut state = self.state.lock();
                 state.process_selection.multiple_selection = ms;
                 if !ms {
@@ -226,7 +237,9 @@ impl BackendPanel for ProcessesPanel {
         let clicked_pid = match &self.freeze {
             FreezeState::Pause(_) => {
                 // Take, use, and restore to avoid borrow conflict
-                if let FreezeState::Pause(held) = std::mem::replace(&mut self.freeze, FreezeState::Live) {
+                if let FreezeState::Pause(held) =
+                    std::mem::replace(&mut self.freeze, FreezeState::Live)
+                {
                     let result = self.table(&held, ui, &pids, &selected, &depth_map);
                     self.freeze = FreezeState::Pause(held);
                     result
@@ -265,7 +278,11 @@ impl BackendPanel for ProcessesPanel {
 impl ProcessesPanel {
     /// If tree_view is enabled, reorders `pids` into tree order (parents before children)
     /// and returns a map of pid → depth. Otherwise returns an empty map.
-    fn reorder_to_tree(&self, pids: &mut Vec<Pid>, process_info: &HashMap<Pid, ProcessInfo>) -> HashMap<Pid, usize> {
+    fn reorder_to_tree(
+        &self,
+        pids: &mut Vec<Pid>,
+        process_info: &HashMap<Pid, ProcessInfo>,
+    ) -> HashMap<Pid, usize> {
         if !self.config.tree_view {
             return HashMap::new();
         }
@@ -319,9 +336,13 @@ impl ProcessesPanel {
         }
 
         // Remaining PIDs that weren't reached (orphans / cycles)
-        let remaining: HashSet<Pid> = pids.iter().copied().collect::<HashSet<_>>()
+        let remaining: HashSet<Pid> = pids
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>()
             .difference(&depth_map.keys().copied().collect::<HashSet<_>>())
-            .copied().collect();
+            .copied()
+            .collect();
         for &pid in &remaining {
             ordered.push(pid);
             depth_map.insert(pid, 0);
@@ -341,7 +362,11 @@ impl ProcessesPanel {
             pids.retain(|pid| {
                 if let Some(info) = process_info.get(pid) {
                     info.detail.name.contains(&self.config.filter)
-                        || info.detail.cmd.iter().any(|arg| arg.contains(&self.config.filter))
+                        || info
+                            .detail
+                            .cmd
+                            .iter()
+                            .any(|arg| arg.contains(&self.config.filter))
                 } else {
                     false
                 }
@@ -368,8 +393,16 @@ impl ProcessesPanel {
             }
             ProcessColumn::CpuUsage => {
                 pids.sort_by(|a, b| {
-                    let latest_a = process_info[a].metrics.back().map(|m| m.cpu_usage).unwrap_or(0.0);
-                    let latest_b = process_info[b].metrics.back().map(|m| m.cpu_usage).unwrap_or(0.0);
+                    let latest_a = process_info[a]
+                        .metrics
+                        .back()
+                        .map(|m| m.cpu_usage)
+                        .unwrap_or(0.0);
+                    let latest_b = process_info[b]
+                        .metrics
+                        .back()
+                        .map(|m| m.cpu_usage)
+                        .unwrap_or(0.0);
                     latest_b.partial_cmp(&latest_a).unwrap()
                 });
             }
@@ -384,8 +417,16 @@ impl ProcessesPanel {
             }
             ProcessColumn::MemoryUsage => {
                 pids.sort_by(|a, b| {
-                    let latest_a = process_info[a].metrics.back().map(|m| m.memory).unwrap_or(0);
-                    let latest_b = process_info[b].metrics.back().map(|m| m.memory).unwrap_or(0);
+                    let latest_a = process_info[a]
+                        .metrics
+                        .back()
+                        .map(|m| m.memory)
+                        .unwrap_or(0);
+                    let latest_b = process_info[b]
+                        .metrics
+                        .back()
+                        .map(|m| m.memory)
+                        .unwrap_or(0);
                     latest_b.cmp(&latest_a)
                 });
             }
@@ -495,11 +536,7 @@ impl<'a> TableDelegate for ProcessesTableDelegate<'a> {
                 });
 
             // Detect click on this cell
-            let response = ui.interact(
-                ui.min_rect(),
-                ui.id().with("click"),
-                Sense::click(),
-            );
+            let response = ui.interact(ui.min_rect(), ui.id().with("click"), Sense::click());
             if response.clicked() {
                 self.clicked_pid = Some(pid);
             }
@@ -600,7 +637,10 @@ impl ProcessColumn {
                                 rect.right_top() - Vec2::new(0.0, 2.0),
                                 rect.right_bottom() + Vec2::new(0.0, 2.0),
                             ],
-                            egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(128, 128, 128, 128)),
+                            egui::Stroke::new(
+                                1.0,
+                                Color32::from_rgba_unmultiplied(128, 128, 128, 128),
+                            ),
                         );
                     }
                     ui.label(format!("{}", info.detail.name));

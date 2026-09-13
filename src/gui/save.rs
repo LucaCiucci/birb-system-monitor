@@ -8,13 +8,12 @@ use uuid::Uuid;
 
 use super::{BackendId, BackendPanelId, tabs::Tab};
 
-
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     pub dock_states: OrderedHashMap<String, DockState<Tab>>,
     pub backend_config: BTreeMap<BackendId, serde_json::Value>,
-    pub panel_config: BTreeMap<BackendId, BTreeMap<BackendPanelId, BTreeMap<String, serde_json::Value>>>,
+    pub panel_config:
+        BTreeMap<BackendId, BTreeMap<BackendPanelId, BTreeMap<String, serde_json::Value>>>,
 }
 
 impl Profile {
@@ -34,7 +33,13 @@ impl Profile {
         self.backend_config.get(backend_id)
     }
 
-    pub fn set_panel_config(&mut self, backend_id: &BackendId, panel_id: &BackendPanelId, uuid: &Uuid, config: serde_json::Value) {
+    pub fn set_panel_config(
+        &mut self,
+        backend_id: &BackendId,
+        panel_id: &BackendPanelId,
+        uuid: &Uuid,
+        config: serde_json::Value,
+    ) {
         self.panel_config
             .entry(backend_id.clone())
             .or_default()
@@ -43,7 +48,12 @@ impl Profile {
             .insert(uuid.to_string(), config);
     }
 
-    pub fn get_panel_config(&self, backend_id: &BackendId, panel_id: &BackendPanelId, uuid: &Uuid) -> Option<&serde_json::Value> {
+    pub fn get_panel_config(
+        &self,
+        backend_id: &BackendId,
+        panel_id: &BackendPanelId,
+        uuid: &Uuid,
+    ) -> Option<&serde_json::Value> {
         self.panel_config
             .get(backend_id)
             .and_then(|panels| panels.get(panel_id))
@@ -80,6 +90,3 @@ impl Profile {
         Ok(())
     }
 }
-
-
-

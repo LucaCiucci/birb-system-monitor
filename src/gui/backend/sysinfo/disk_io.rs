@@ -5,8 +5,8 @@ use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
 use human_units::FormatSize;
 
 use crate::gui::{
-    backend::sysinfo::{SnapshotData, SysinfoSharedState},
     BackendPanel,
+    backend::sysinfo::{SnapshotData, SysinfoSharedState},
 };
 
 const MIN_TIME_SECONDS: f64 = 0.0;
@@ -49,7 +49,6 @@ impl BackendPanel for DiskIoPanel {
         } else {
             ui.label("Loading...");
         }
-
     }
 }
 
@@ -70,8 +69,18 @@ fn disk_io_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], plot_height: f32,
                 .duration_since(prev.captured_at)
                 .as_secs_f64()
                 .max(0.001);
-            let read_rate = (curr.disk_io_stats.total_read_bytes.saturating_sub(prev.disk_io_stats.total_read_bytes)) as f64 / dt;
-            let write_rate = (curr.disk_io_stats.total_written_bytes.saturating_sub(prev.disk_io_stats.total_written_bytes)) as f64 / dt;
+            let read_rate = (curr
+                .disk_io_stats
+                .total_read_bytes
+                .saturating_sub(prev.disk_io_stats.total_read_bytes))
+                as f64
+                / dt;
+            let write_rate = (curr
+                .disk_io_stats
+                .total_written_bytes
+                .saturating_sub(prev.disk_io_stats.total_written_bytes))
+                as f64
+                / dt;
             let seconds_ago = latest
                 .captured_at
                 .duration_since(curr.captured_at)
@@ -80,14 +89,8 @@ fn disk_io_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], plot_height: f32,
         })
         .collect();
 
-    let read_points: PlotPoints = rate_points
-        .iter()
-        .map(|(r, _)| *r)
-        .collect();
-    let write_points: PlotPoints = rate_points
-        .iter()
-        .map(|(_, w)| *w)
-        .collect();
+    let read_points: PlotPoints = rate_points.iter().map(|(r, _)| *r).collect();
+    let write_points: PlotPoints = rate_points.iter().map(|(_, w)| *w).collect();
 
     // Determine y-axis range
     let max_rate = rate_points
@@ -109,10 +112,10 @@ fn disk_io_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], plot_height: f32,
         .allow_double_click_reset(false)
         .legend(Legend::default().position(Corner::LeftTop))
         .custom_x_axes(vec![
-            AxisHints::new_x().formatter(|mark, _| format_seconds_ago(mark.value))
+            AxisHints::new_x().formatter(|mark, _| format_seconds_ago(mark.value)),
         ])
         .custom_y_axes(vec![
-            AxisHints::new_y().formatter(|mark, _| format_bytes_per_sec(mark.value))
+            AxisHints::new_y().formatter(|mark, _| format_bytes_per_sec(mark.value)),
         ])
         .show(ui, |plot_ui| {
             plot_ui.set_plot_bounds_x(MIN_TIME_SECONDS..=max_time_seconds);

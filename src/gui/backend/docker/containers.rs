@@ -1,11 +1,8 @@
 use std::sync::Arc;
 
-use egui::{mutex::Mutex, Color32, Grid, Ui, WidgetText};
+use egui::{Color32, Grid, Ui, WidgetText, mutex::Mutex};
 
-use crate::gui::{
-    backend::docker::DockerSharedState,
-    BackendPanel,
-};
+use crate::gui::{BackendPanel, backend::docker::DockerSharedState};
 
 pub struct ContainersPanel {
     state: Arc<Mutex<DockerSharedState>>,

@@ -7,8 +7,8 @@ use human_units::FormatSize;
 use sysinfo::Pid;
 
 use crate::gui::{
-    backend::sysinfo::{ProcessInfo, SnapshotData, SysinfoSharedState},
     BackendPanel,
+    backend::sysinfo::{ProcessInfo, SnapshotData, SysinfoSharedState},
 };
 
 const MIN_USAGE_PERCENT: f64 = 0.0;
@@ -63,7 +63,10 @@ impl BackendPanel for DashboardPanel {
                     latest.general_stats.used_memory.format_size(),
                     latest.general_stats.total_memory.format_size(),
                 ));
-                let memory_percent = percent(latest.general_stats.used_memory, latest.general_stats.total_memory);
+                let memory_percent = percent(
+                    latest.general_stats.used_memory,
+                    latest.general_stats.total_memory,
+                );
                 ui.add(
                     ProgressBar::new(memory_percent as f32 / 100.0)
                         .desired_width(120.0)
@@ -77,7 +80,10 @@ impl BackendPanel for DashboardPanel {
                     latest.general_stats.used_swap.format_size(),
                     latest.general_stats.total_swap.format_size(),
                 ));
-                let swap_percent = percent(latest.general_stats.used_swap, latest.general_stats.total_swap);
+                let swap_percent = percent(
+                    latest.general_stats.used_swap,
+                    latest.general_stats.total_swap,
+                );
                 ui.add(
                     ProgressBar::new(swap_percent as f32 / 100.0)
                         .desired_width(120.0)
@@ -105,11 +111,27 @@ impl BackendPanel for DashboardPanel {
                 // Row 1
                 body.row(row_height, |mut row| {
                     row.col(|ui| {
-                        mini_cpu_plot(ui, latest, &data.data, &data.process_info, &data.process_selection.selected_processes, mini_plot_height, min_window);
+                        mini_cpu_plot(
+                            ui,
+                            latest,
+                            &data.data,
+                            &data.process_info,
+                            &data.process_selection.selected_processes,
+                            mini_plot_height,
+                            min_window,
+                        );
                     });
                     if cols >= 2 {
                         row.col(|ui| {
-                            mini_memory_plot(ui, latest, &data.data, &data.process_info, &data.process_selection.selected_processes, mini_plot_height, min_window);
+                            mini_memory_plot(
+                                ui,
+                                latest,
+                                &data.data,
+                                &data.process_info,
+                                &data.process_selection.selected_processes,
+                                mini_plot_height,
+                                min_window,
+                            );
                         });
                     }
                 });
@@ -127,7 +149,13 @@ impl BackendPanel for DashboardPanel {
                 // Row 3: Temperature chart
                 body.row(row_height, |mut row| {
                     row.col(|ui| {
-                        mini_temperature_chart(ui, latest, &data.data, mini_plot_height, min_window);
+                        mini_temperature_chart(
+                            ui,
+                            latest,
+                            &data.data,
+                            mini_plot_height,
+                            min_window,
+                        );
                     });
                     if cols >= 2 {
                         row.col(|_ui| {});
@@ -157,7 +185,6 @@ impl BackendPanel for DashboardPanel {
                     }
                 }
             });
-
     }
 }
 
@@ -183,11 +210,15 @@ fn mini_cpu_plot(
                     .captured_at
                     .duration_since(snapshot.captured_at)
                     .as_secs_f64();
-                [seconds_ago, clamp_percent(snapshot.cpu_stats.global_usage as f64)]
+                [
+                    seconds_ago,
+                    clamp_percent(snapshot.cpu_stats.global_usage as f64),
+                ]
             })
             .collect();
 
-        let selected_points = selected_cpu_points(snapshots, latest, selected_processes, process_info);
+        let selected_points =
+            selected_cpu_points(snapshots, latest, selected_processes, process_info);
 
         Plot::new("dash_cpu")
             .height(plot_height)
@@ -208,14 +239,21 @@ fn mini_cpu_plot(
 
                 let total_layer = total_cpu_layer(snapshots, latest);
                 plot_ui.add(
-                    FilledArea::new("Total", &total_layer.xs, &total_layer.lower, &total_layer.upper)
-                        .fill_color(Color32::from_rgba_unmultiplied(100, 181, 246, 120))
-                        .stroke(Stroke::new(1.0, Color32::LIGHT_BLUE)),
+                    FilledArea::new(
+                        "Total",
+                        &total_layer.xs,
+                        &total_layer.lower,
+                        &total_layer.upper,
+                    )
+                    .fill_color(Color32::from_rgba_unmultiplied(100, 181, 246, 120))
+                    .stroke(Stroke::new(1.0, Color32::LIGHT_BLUE)),
                 );
                 plot_ui.line(Line::new("Total", points).color(Color32::WHITE));
                 if !selected_processes.is_empty() {
                     plot_ui.line(
-                        Line::new("Selected", selected_points).color(Color32::YELLOW).width(2.0),
+                        Line::new("Selected", selected_points)
+                            .color(Color32::YELLOW)
+                            .width(2.0),
                     );
                 }
             });
@@ -244,7 +282,13 @@ fn mini_memory_plot(
                     .captured_at
                     .duration_since(snapshot.captured_at)
                     .as_secs_f64();
-                [seconds_ago, clamp_percent(percent(snapshot.general_stats.used_memory, snapshot.general_stats.total_memory))]
+                [
+                    seconds_ago,
+                    clamp_percent(percent(
+                        snapshot.general_stats.used_memory,
+                        snapshot.general_stats.total_memory,
+                    )),
+                ]
             })
             .collect();
         let swap_points: PlotPoints = snapshots
@@ -254,10 +298,17 @@ fn mini_memory_plot(
                     .captured_at
                     .duration_since(snapshot.captured_at)
                     .as_secs_f64();
-                [seconds_ago, clamp_percent(percent(snapshot.general_stats.used_swap, snapshot.general_stats.total_swap))]
+                [
+                    seconds_ago,
+                    clamp_percent(percent(
+                        snapshot.general_stats.used_swap,
+                        snapshot.general_stats.total_swap,
+                    )),
+                ]
             })
             .collect();
-        let selected_points = selected_memory_points(snapshots, latest, selected_processes, process_info);
+        let selected_points =
+            selected_memory_points(snapshots, latest, selected_processes, process_info);
 
         Plot::new("dash_memory")
             .height(plot_height)
@@ -279,7 +330,9 @@ fn mini_memory_plot(
                 plot_ui.line(Line::new("Swap", swap_points).color(Color32::LIGHT_GREEN));
                 if !selected_processes.is_empty() {
                     plot_ui.line(
-                        Line::new("Selected", selected_points).color(Color32::YELLOW).width(2.0),
+                        Line::new("Selected", selected_points)
+                            .color(Color32::YELLOW)
+                            .width(2.0),
                     );
                 }
             });
@@ -288,7 +341,13 @@ fn mini_memory_plot(
 
 // ── Network mini plot ──
 
-fn mini_network_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotData], plot_height: f32, min_window: f64) {
+fn mini_network_plot(
+    ui: &mut Ui,
+    latest: &SnapshotData,
+    snapshots: &[SnapshotData],
+    plot_height: f32,
+    min_window: f64,
+) {
     ui.vertical(|ui| {
         ui.label("Network");
         let max_time = max_time_seconds(snapshots, latest, min_window);
@@ -298,10 +357,27 @@ fn mini_network_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotDa
             .map(|pair| {
                 let prev = &pair[0];
                 let curr = &pair[1];
-                let dt = curr.captured_at.duration_since(prev.captured_at).as_secs_f64().max(0.001);
-                let rx = (curr.network_stats.total_received.saturating_sub(prev.network_stats.total_received)) as f64 / dt;
-                let tx = (curr.network_stats.total_transmitted.saturating_sub(prev.network_stats.total_transmitted)) as f64 / dt;
-                let seconds_ago = latest.captured_at.duration_since(curr.captured_at).as_secs_f64();
+                let dt = curr
+                    .captured_at
+                    .duration_since(prev.captured_at)
+                    .as_secs_f64()
+                    .max(0.001);
+                let rx = (curr
+                    .network_stats
+                    .total_received
+                    .saturating_sub(prev.network_stats.total_received))
+                    as f64
+                    / dt;
+                let tx = (curr
+                    .network_stats
+                    .total_transmitted
+                    .saturating_sub(prev.network_stats.total_transmitted))
+                    as f64
+                    / dt;
+                let seconds_ago = latest
+                    .captured_at
+                    .duration_since(curr.captured_at)
+                    .as_secs_f64();
                 ([seconds_ago, rx], [seconds_ago, tx])
             })
             .collect();
@@ -309,7 +385,11 @@ fn mini_network_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotDa
         let rx_points: PlotPoints = rate_points.iter().map(|(r, _)| *r).collect();
         let tx_points: PlotPoints = rate_points.iter().map(|(_, t)| *t).collect();
 
-        let max_rate = rate_points.iter().flat_map(|(r, t)| [r[1], t[1]]).fold(0.0_f64, f64::max).max(1.0);
+        let max_rate = rate_points
+            .iter()
+            .flat_map(|(r, t)| [r[1], t[1]])
+            .fold(0.0_f64, f64::max)
+            .max(1.0);
 
         Plot::new("dash_network")
             .height(plot_height)
@@ -327,15 +407,29 @@ fn mini_network_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotDa
             .show(ui, |plot_ui| {
                 plot_ui.set_plot_bounds_x(MIN_TIME_SECONDS..=max_time);
                 plot_ui.set_plot_bounds_y(0.0..=(max_rate * 1.1));
-                plot_ui.line(Line::new("RX", rx_points).color(Color32::from_rgb(76, 175, 80)).width(1.5));
-                plot_ui.line(Line::new("TX", tx_points).color(Color32::from_rgb(66, 165, 245)).width(1.5));
+                plot_ui.line(
+                    Line::new("RX", rx_points)
+                        .color(Color32::from_rgb(76, 175, 80))
+                        .width(1.5),
+                );
+                plot_ui.line(
+                    Line::new("TX", tx_points)
+                        .color(Color32::from_rgb(66, 165, 245))
+                        .width(1.5),
+                );
             });
     });
 }
 
 // ── Disk I/O mini plot ──
 
-fn mini_disk_io_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotData], plot_height: f32, min_window: f64) {
+fn mini_disk_io_plot(
+    ui: &mut Ui,
+    latest: &SnapshotData,
+    snapshots: &[SnapshotData],
+    plot_height: f32,
+    min_window: f64,
+) {
     ui.vertical(|ui| {
         ui.label("Disk I/O");
         let max_time = max_time_seconds(snapshots, latest, min_window);
@@ -345,10 +439,27 @@ fn mini_disk_io_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotDa
             .map(|pair| {
                 let prev = &pair[0];
                 let curr = &pair[1];
-                let dt = curr.captured_at.duration_since(prev.captured_at).as_secs_f64().max(0.001);
-                let read = (curr.disk_io_stats.total_read_bytes.saturating_sub(prev.disk_io_stats.total_read_bytes)) as f64 / dt;
-                let write = (curr.disk_io_stats.total_written_bytes.saturating_sub(prev.disk_io_stats.total_written_bytes)) as f64 / dt;
-                let seconds_ago = latest.captured_at.duration_since(curr.captured_at).as_secs_f64();
+                let dt = curr
+                    .captured_at
+                    .duration_since(prev.captured_at)
+                    .as_secs_f64()
+                    .max(0.001);
+                let read = (curr
+                    .disk_io_stats
+                    .total_read_bytes
+                    .saturating_sub(prev.disk_io_stats.total_read_bytes))
+                    as f64
+                    / dt;
+                let write = (curr
+                    .disk_io_stats
+                    .total_written_bytes
+                    .saturating_sub(prev.disk_io_stats.total_written_bytes))
+                    as f64
+                    / dt;
+                let seconds_ago = latest
+                    .captured_at
+                    .duration_since(curr.captured_at)
+                    .as_secs_f64();
                 ([seconds_ago, read], [seconds_ago, write])
             })
             .collect();
@@ -356,7 +467,11 @@ fn mini_disk_io_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotDa
         let read_points: PlotPoints = rate_points.iter().map(|(r, _)| *r).collect();
         let write_points: PlotPoints = rate_points.iter().map(|(_, w)| *w).collect();
 
-        let max_rate = rate_points.iter().flat_map(|(r, w)| [r[1], w[1]]).fold(0.0_f64, f64::max).max(1.0);
+        let max_rate = rate_points
+            .iter()
+            .flat_map(|(r, w)| [r[1], w[1]])
+            .fold(0.0_f64, f64::max)
+            .max(1.0);
 
         Plot::new("dash_disk_io")
             .height(plot_height)
@@ -374,15 +489,29 @@ fn mini_disk_io_plot(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotDa
             .show(ui, |plot_ui| {
                 plot_ui.set_plot_bounds_x(MIN_TIME_SECONDS..=max_time);
                 plot_ui.set_plot_bounds_y(0.0..=(max_rate * 1.1));
-                plot_ui.line(Line::new("Read", read_points).color(Color32::from_rgb(255, 183, 77)).width(1.5));
-                plot_ui.line(Line::new("Write", write_points).color(Color32::from_rgb(244, 67, 54)).width(1.5));
+                plot_ui.line(
+                    Line::new("Read", read_points)
+                        .color(Color32::from_rgb(255, 183, 77))
+                        .width(1.5),
+                );
+                plot_ui.line(
+                    Line::new("Write", write_points)
+                        .color(Color32::from_rgb(244, 67, 54))
+                        .width(1.5),
+                );
             });
     });
 }
 
 // ── Temperature mini chart ──
 
-fn mini_temperature_chart(ui: &mut Ui, latest: &SnapshotData, snapshots: &[SnapshotData], plot_height: f32, min_window: f64) {
+fn mini_temperature_chart(
+    ui: &mut Ui,
+    latest: &SnapshotData,
+    snapshots: &[SnapshotData],
+    plot_height: f32,
+    min_window: f64,
+) {
     if latest.component_stats.components.is_empty() {
         ui.vertical(|ui| {
             ui.label("Temperature");
@@ -456,7 +585,10 @@ fn mini_temperature_chart(ui: &mut Ui, latest: &SnapshotData, snapshots: &[Snaps
 fn truncate_label(label: &str) -> String {
     const MAX_LEN: usize = 22;
     if label.len() > MAX_LEN {
-        let mut s = label.chars().take(MAX_LEN.saturating_sub(1)).collect::<String>();
+        let mut s = label
+            .chars()
+            .take(MAX_LEN.saturating_sub(1))
+            .collect::<String>();
         s.push('…');
         s
     } else {
@@ -510,10 +642,7 @@ struct CpuLayer {
     upper: Vec<f64>,
 }
 
-fn total_cpu_layer(
-    snapshots: &[SnapshotData],
-    latest: &SnapshotData,
-) -> CpuLayer {
+fn total_cpu_layer(snapshots: &[SnapshotData], latest: &SnapshotData) -> CpuLayer {
     let mut layer = CpuLayer {
         xs: Vec::with_capacity(snapshots.len()),
         lower: Vec::with_capacity(snapshots.len()),
@@ -528,7 +657,9 @@ fn total_cpu_layer(
 
         layer.xs.push(seconds_ago);
         layer.lower.push(MIN_USAGE_PERCENT);
-        layer.upper.push(clamp_percent(snapshot.cpu_stats.global_usage as f64));
+        layer
+            .upper
+            .push(clamp_percent(snapshot.cpu_stats.global_usage as f64));
     }
 
     layer
@@ -551,7 +682,12 @@ fn selected_cpu_points(
             let selected_usage = selected_processes
                 .iter()
                 .filter_map(|pid| process_info.get(pid))
-                .map(|info| info.metrics.get(i).map(|m| m.cpu_usage as f64).unwrap_or(0.0))
+                .map(|info| {
+                    info.metrics
+                        .get(i)
+                        .map(|m| m.cpu_usage as f64)
+                        .unwrap_or(0.0)
+                })
                 .sum::<f64>();
             [seconds_ago, clamp_percent(selected_usage)]
         })
@@ -577,7 +713,13 @@ fn selected_memory_points(
                 .filter_map(|pid| process_info.get(pid))
                 .map(|info| info.metrics.get(i).map(|m| m.memory).unwrap_or(0))
                 .sum::<u64>();
-            [seconds_ago, clamp_percent(percent(selected_memory, snapshot.general_stats.total_memory))]
+            [
+                seconds_ago,
+                clamp_percent(percent(
+                    selected_memory,
+                    snapshot.general_stats.total_memory,
+                )),
+            ]
         })
         .collect()
 }

@@ -2,10 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use egui::{Color32, Grid, ProgressBar, WidgetText, mutex::Mutex};
 
-use crate::gui::{
-    backend::sysinfo::SysinfoSharedState,
-    BackendPanel,
-};
+use crate::gui::{BackendPanel, backend::sysinfo::SysinfoSharedState};
 
 pub(super) struct TemperaturePanel {
     state: Arc<Mutex<SysinfoSharedState>>,
@@ -41,11 +38,12 @@ impl BackendPanel for TemperaturePanel {
         ui.horizontal(|ui| {
             ui.label(format!("{} sensors", components.len()));
             ui.separator();
-            let avg_temp = components
-                .iter()
-                .filter_map(|c| c.temperature)
-                .sum::<f32>()
-                / components.iter().filter(|c| c.temperature.is_some()).count().max(1) as f32;
+            let avg_temp = components.iter().filter_map(|c| c.temperature).sum::<f32>()
+                / components
+                    .iter()
+                    .filter(|c| c.temperature.is_some())
+                    .count()
+                    .max(1) as f32;
             if avg_temp > 0.0 {
                 ui.label(format!("Average: {avg_temp:.0}°C"));
             }
@@ -123,12 +121,12 @@ fn temp_color(temperature: f32, critical: Option<f32>) -> Color32 {
     let threshold = critical.unwrap_or(100.0);
     let ratio = temperature / threshold;
     if ratio > 0.9 {
-        Color32::from_rgb(244, 67, 54)     // red (critical)
+        Color32::from_rgb(244, 67, 54) // red (critical)
     } else if ratio > 0.7 {
-        Color32::from_rgb(255, 193, 7)     // yellow (warm)
+        Color32::from_rgb(255, 193, 7) // yellow (warm)
     } else if ratio > 0.4 {
-        Color32::from_rgb(100, 181, 246)   // blue (moderate)
+        Color32::from_rgb(100, 181, 246) // blue (moderate)
     } else {
-        Color32::from_rgb(76, 175, 80)     // green (cool)
+        Color32::from_rgb(76, 175, 80) // green (cool)
     }
 }

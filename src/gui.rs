@@ -5,10 +5,10 @@ pub mod backend;
 use ecow::EcoString;
 use egui::{Ui, WidgetText};
 use serde::{Deserialize, Serialize};
+pub mod gui_main;
+pub mod save;
 pub mod tabs;
 pub mod widgets;
-pub mod save;
-pub mod gui_main;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PanelId {
@@ -131,4 +131,3 @@ pub trait BackendPanel {
         Ok(())
     }
 }
-

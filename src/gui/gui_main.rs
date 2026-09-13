@@ -1,6 +1,12 @@
 use std::{collections::HashMap, time::Duration};
 
-use super::{Backend, BackendId, BackendPanel, PanelId, backend::init_all_backends, save::Profile, tabs::{Tab, default_dock_state}, widgets::placeholder_sentence};
+use super::{
+    Backend, BackendId, BackendPanel, PanelId,
+    backend::init_all_backends,
+    save::Profile,
+    tabs::{Tab, default_dock_state},
+    widgets::placeholder_sentence,
+};
 use eframe::egui;
 use egui::{Button, Color32, Id, MenuBar, Ui, Vec2, WidgetText, accesskit::Uuid};
 use egui_dock::{DockArea, TabViewer};
@@ -13,15 +19,11 @@ fn make_icon() -> egui::IconData {
     let mut rgba = Vec::with_capacity((size * size * 4) as usize);
     // Define a few polyline segments for the graph lines
     let lines: &[&[(i32, i32)]] = &[
-        &[(4, 24), (12, 20), (20, 22), (28, 12)],  // CPU - blue
-        &[(4, 24), (12, 22), (20, 18), (28, 16)],  // Mem - green
-        &[(4, 24), (12, 23), (20, 20), (28, 18)],  // Net - orange
+        &[(4, 24), (12, 20), (20, 22), (28, 12)], // CPU - blue
+        &[(4, 24), (12, 22), (20, 18), (28, 16)], // Mem - green
+        &[(4, 24), (12, 23), (20, 20), (28, 18)], // Net - orange
     ];
-    let colors: &[(u8, u8, u8)] = &[
-        (100, 181, 246),
-        (129, 199, 132),
-        (255, 183, 77),
-    ];
+    let colors: &[(u8, u8, u8)] = &[(100, 181, 246), (129, 199, 132), (255, 183, 77)];
 
     for y in 0..size {
         for x in 0..size {
@@ -38,7 +40,9 @@ fn make_icon() -> egui::IconData {
                         let dx = (x2 - x1) as f32;
                         let dy = (y2 - y1) as f32;
                         let len2 = dx * dx + dy * dy;
-                        if len2 < 0.001 { continue; }
+                        if len2 < 0.001 {
+                            continue;
+                        }
                         let t = ((px - x1 as f32) * dx + (py - y1 as f32) * dy) / len2;
                         let t = t.clamp(0.0, 1.0);
                         let nx = x1 as f32 + t * dx;
@@ -66,14 +70,19 @@ fn make_icon() -> egui::IconData {
             rgba.push(a);
         }
     }
-    egui::IconData { rgba, width: size, height: size }
+    egui::IconData {
+        rgba,
+        width: size,
+        height: size,
+    }
 }
 
 pub fn main() -> anyhow::Result<()> {
     let app_id = env!("CARGO_PKG_NAME");
 
     let mut native_options = eframe::NativeOptions::default();
-    native_options.viewport = native_options.viewport
+    native_options.viewport = native_options
+        .viewport
         .with_app_id(app_id.to_string())
         .with_icon(make_icon());
 
@@ -84,7 +93,8 @@ pub fn main() -> anyhow::Result<()> {
         "Birb System Monitor",
         native_options,
         Box::new(|cc| Ok(Box::new(MonitorApp::new(cc)))),
-    ).map_err(|e| anyhow::anyhow!("{e}"))?;
+    )
+    .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     Ok(())
 }
@@ -107,20 +117,31 @@ impl MonitorApp {
     }
 
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let loaded_profile: Option<Profile> = _cc.storage
+        let loaded_profile: Option<Profile> = _cc
+            .storage
             .and_then(|storage| storage.get_string("profile"))
-            .and_then(|profile_json| serde_json::from_str(&profile_json).map_err(|e| {
-                eprintln!("Failed to parse profile JSON: {e}");
-                eprintln!("Profile JSON was: {profile_json}");
-                e
-            }).ok());
+            .and_then(|profile_json| {
+                serde_json::from_str(&profile_json)
+                    .map_err(|e| {
+                        eprintln!("Failed to parse profile JSON: {e}");
+                        eprintln!("Profile JSON was: {profile_json}");
+                        e
+                    })
+                    .ok()
+            });
 
-        let dock_states = loaded_profile.as_ref().map(|p| p.dock_states.clone()).unwrap_or_default();
+        let dock_states = loaded_profile
+            .as_ref()
+            .map(|p| p.dock_states.clone())
+            .unwrap_or_default();
 
         let mut backends = init_all_backends(&_cc.egui_ctx);
 
         for (id, backend) in &mut backends {
-            if let Some(config) = loaded_profile.as_ref().and_then(|p| p.get_backend_config(id)) {
+            if let Some(config) = loaded_profile
+                .as_ref()
+                .and_then(|p| p.get_backend_config(id))
+            {
                 if let Err(e) = backend.load_config(config) {
                     eprintln!("Failed to load config for backend {}: {:?}", id, e);
                 }
@@ -148,7 +169,13 @@ impl MonitorApp {
             }
         }
 
-        Self { loaded_profile, backends, panels, dock_states, selected_tab: "main".into() }
+        Self {
+            loaded_profile,
+            backends,
+            panels,
+            dock_states,
+            selected_tab: "main".into(),
+        }
     }
 
     fn menu(&mut self, ui: &mut Ui) {
@@ -171,7 +198,10 @@ impl MonitorApp {
                         for panel in (&**backend).panels() {
                             if ui.button(panel.title.as_str()).clicked() {
                                 let panel_id = PanelId::new(id.clone(), panel.id.clone());
-                                self.dock_states.entry(self.selected_tab.clone()).or_insert_with(default_dock_state).push_to_focused_leaf(Tab::Panel(panel_id, Uuid::new_v4()));
+                                self.dock_states
+                                    .entry(self.selected_tab.clone())
+                                    .or_insert_with(default_dock_state)
+                                    .push_to_focused_leaf(Tab::Panel(panel_id, Uuid::new_v4()));
                             }
                         }
                     });
@@ -183,12 +213,11 @@ impl MonitorApp {
 
 impl eframe::App for MonitorApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
-        egui::Panel::bottom("footer")
-            .show_inside(ui, |ui| {
-                ui.centered_and_justified(|ui| {
-                    placeholder_sentence(ui);
-                });
+        egui::Panel::bottom("footer").show_inside(ui, |ui| {
+            ui.centered_and_justified(|ui| {
+                placeholder_sentence(ui);
             });
+        });
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
             self.menu(ui);
@@ -196,7 +225,8 @@ impl eframe::App for MonitorApp {
             ui.horizontal(|ui| {
                 for tab in self.dock_states.keys().cloned().collect_vec() {
                     let selected = self.selected_tab == *tab;
-                    let selectable_label = Button::selectable(selected, tab.as_str()).min_size(Vec2::new(50.0, 0.0));
+                    let selectable_label =
+                        Button::selectable(selected, tab.as_str()).min_size(Vec2::new(50.0, 0.0));
                     if ui.add(selectable_label).clicked() {
                         self.selected_tab = tab.clone();
                     }
@@ -205,17 +235,28 @@ impl eframe::App for MonitorApp {
                         if ui.add(btn).clicked() {
                             self.dock_states.remove(&tab);
                             if self.selected_tab == *tab {
-                                self.selected_tab = self.dock_states.keys().next().cloned().unwrap_or_else(|| "main".into());
+                                self.selected_tab = self
+                                    .dock_states
+                                    .keys()
+                                    .next()
+                                    .cloned()
+                                    .unwrap_or_else(|| "main".into());
                             }
                         }
                     }
                 }
                 {
                     let editing_id = Id::new("editing").with(ui.id());
-                    let editing = ui.data_mut(|m| m.get_temp_mut_or_insert_with(editing_id, || false).clone());
+                    let editing = ui
+                        .data_mut(|m| m.get_temp_mut_or_insert_with(editing_id, || false).clone());
                     if editing {
                         let new_name_id = Id::new("editing_name").with(ui.id());
-                        let mut new_name_str = ui.data_mut(|m| m.get_temp_mut_or_insert_with(new_name_id, || format!("tab_{}", self.dock_states.len() + 1)).clone());
+                        let mut new_name_str = ui.data_mut(|m| {
+                            m.get_temp_mut_or_insert_with(new_name_id, || {
+                                format!("tab_{}", self.dock_states.len() + 1)
+                            })
+                            .clone()
+                        });
                         let new_name = ui.text_edit_singleline(&mut new_name_str).lost_focus();
                         ui.data_mut(|m: &mut egui::util::IdTypeMap| {
                             m.insert_temp(new_name_id, new_name_str.clone());
@@ -234,9 +275,16 @@ impl eframe::App for MonitorApp {
                 }
             });
 
-            DockArea::new(self.dock_states.entry(self.selected_tab.clone()).or_insert_with(default_dock_state))
-                .style(egui_dock::Style::from_egui(ui.style().as_ref()))
-                .show_inside(ui, &mut MyTabViewer::new(&self.loaded_profile, &self.backends, &mut self.panels));
+            DockArea::new(
+                self.dock_states
+                    .entry(self.selected_tab.clone())
+                    .or_insert_with(default_dock_state),
+            )
+            .style(egui_dock::Style::from_egui(ui.style().as_ref()))
+            .show_inside(
+                ui,
+                &mut MyTabViewer::new(&self.loaded_profile, &self.backends, &mut self.panels),
+            );
         });
     }
 
@@ -275,7 +323,6 @@ impl eframe::App for MonitorApp {
     }
 }
 
-
 struct MyTabViewer<'a> {
     loaded_profile: &'a Option<Profile>,
     backends: &'a HashMap<BackendId, Box<dyn Backend>>,
@@ -288,26 +335,37 @@ impl<'a> MyTabViewer<'a> {
         backends: &'a HashMap<BackendId, Box<dyn Backend>>,
         panels: &'a mut HashMap<(PanelId, Uuid), Box<dyn BackendPanel>>,
     ) -> Self {
-        Self { loaded_profile, backends, panels }
+        Self {
+            loaded_profile,
+            backends,
+            panels,
+        }
     }
 
     fn get_panel(&mut self, panel_id: &PanelId, uuid: &Uuid) -> &mut dyn BackendPanel {
-        self.panels.entry((panel_id.clone(), *uuid)).or_insert_with(|| {
-            let backend = self.backends.get(&panel_id.backend).expect("Backend not found");
-            let mut panel = backend.new_panel(&panel_id.panel);
+        self.panels
+            .entry((panel_id.clone(), *uuid))
+            .or_insert_with(|| {
+                let backend = self
+                    .backends
+                    .get(&panel_id.backend)
+                    .expect("Backend not found");
+                let mut panel = backend.new_panel(&panel_id.panel);
 
-            let config = self.loaded_profile
-                .as_ref()
-                .and_then(|p| p.get_panel_config(&panel_id.backend, &panel_id.panel, uuid));
+                let config = self
+                    .loaded_profile
+                    .as_ref()
+                    .and_then(|p| p.get_panel_config(&panel_id.backend, &panel_id.panel, uuid));
 
-            if let Some(config) = config {
-                if let Err(e) = panel.load_config(config) {
-                    eprintln!("Failed to load config for panel {}: {:?}", panel_id, e);
+                if let Some(config) = config {
+                    if let Err(e) = panel.load_config(config) {
+                        eprintln!("Failed to load config for panel {}: {:?}", panel_id, e);
+                    }
                 }
-            }
 
-            panel
-        }).as_mut()
+                panel
+            })
+            .as_mut()
     }
 }
 

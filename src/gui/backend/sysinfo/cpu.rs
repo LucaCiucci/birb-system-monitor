@@ -1,11 +1,14 @@
 use std::{collections::HashMap, collections::HashSet, sync::Arc};
 
-use egui::{mutex::Mutex, Color32, Grid, ProgressBar, Stroke, WidgetText};
+use egui::{Color32, Grid, ProgressBar, Stroke, WidgetText, mutex::Mutex};
 use egui_plot::{AxisHints, Corner, FilledArea, Legend, Line, Plot, PlotPoints};
 use serde::{Deserialize, Serialize};
 use sysinfo::Pid;
 
-use crate::gui::{BackendPanel, backend::sysinfo::{ProcessInfo, SnapshotData, SysinfoSharedState}};
+use crate::gui::{
+    BackendPanel,
+    backend::sysinfo::{ProcessInfo, SnapshotData, SysinfoSharedState},
+};
 
 const MIN_USAGE_PERCENT: f64 = 0.0;
 const MAX_USAGE_PERCENT: f64 = 100.0;
@@ -18,9 +21,7 @@ struct CpuPanelConfig {
 
 impl Default for CpuPanelConfig {
     fn default() -> Self {
-        Self {
-            show_per_cpu: true,
-        }
+        Self { show_per_cpu: true }
     }
 }
 
@@ -93,7 +94,6 @@ impl BackendPanel for CpuPanel {
                     }
                 });
         });
-
     }
 
     fn save_config(&self) -> anyhow::Result<serde_json::Value> {
@@ -148,10 +148,10 @@ fn cpu_plot(
         .allow_double_click_reset(false)
         .legend(Legend::default().position(Corner::LeftTop))
         .custom_x_axes(vec![
-            AxisHints::new_x().formatter(|mark, _| format_seconds_ago(mark.value))
+            AxisHints::new_x().formatter(|mark, _| format_seconds_ago(mark.value)),
         ])
         .custom_y_axes(vec![
-            AxisHints::new_y().formatter(|mark, _| format!("{:.0}%", mark.value))
+            AxisHints::new_y().formatter(|mark, _| format!("{:.0}%", mark.value)),
         ]);
 
     plot.show(ui, |plot_ui| {
@@ -214,7 +214,12 @@ fn selected_cpu_points(
             let selected_usage = selected_processes
                 .iter()
                 .filter_map(|pid| process_info.get(pid))
-                .map(|info| info.metrics.get(i).map(|m| m.cpu_usage as f64).unwrap_or(0.0))
+                .map(|info| {
+                    info.metrics
+                        .get(i)
+                        .map(|m| m.cpu_usage as f64)
+                        .unwrap_or(0.0)
+                })
                 .sum::<f64>();
             [seconds_ago, clamp_percent(selected_usage)]
         })
@@ -228,10 +233,7 @@ struct CpuLayer {
     upper: Vec<f64>,
 }
 
-fn stacked_cpu_layers(
-    snapshots: &[SnapshotData],
-    latest: &SnapshotData,
-) -> Vec<CpuLayer> {
+fn stacked_cpu_layers(snapshots: &[SnapshotData], latest: &SnapshotData) -> Vec<CpuLayer> {
     let cpu_count = latest.cpu_stats.per_cpu_usage.len();
     let mut layers = (0..cpu_count)
         .map(|cpu_index| CpuLayer {
@@ -280,10 +282,7 @@ fn stacked_cpu_layers(
     layers
 }
 
-fn total_cpu_layer(
-    snapshots: &[SnapshotData],
-    latest: &SnapshotData,
-) -> CpuLayer {
+fn total_cpu_layer(snapshots: &[SnapshotData], latest: &SnapshotData) -> CpuLayer {
     let mut layer = CpuLayer {
         cpu_index: 0,
         xs: Vec::with_capacity(snapshots.len()),
@@ -307,11 +306,7 @@ fn total_cpu_layer(
     layer
 }
 
-fn max_time_seconds(
-    snapshots: &[SnapshotData],
-    latest: &SnapshotData,
-    min_window: f64,
-) -> f64 {
+fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData, min_window: f64) -> f64 {
     snapshots
         .first()
         .map(|oldest| {

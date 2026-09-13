@@ -6,8 +6,8 @@ use human_units::FormatSize;
 use sysinfo::Pid;
 
 use crate::gui::{
-    backend::sysinfo::{ProcessInfo, SnapshotData, SysinfoSharedState},
     BackendPanel,
+    backend::sysinfo::{ProcessInfo, SnapshotData, SysinfoSharedState},
 };
 
 const MIN_USAGE_PERCENT: f64 = 0.0;
@@ -70,15 +70,28 @@ impl BackendPanel for MemoryPanel {
 
             let plot_height = ui.available_height().clamp(100.0, 600.0);
             let min_window = data.config.min_plot_window_secs();
-            memory_plot(ui, &data.data, &data.process_info, &data.process_selection.selected_processes, plot_height, min_window);
+            memory_plot(
+                ui,
+                &data.data,
+                &data.process_info,
+                &data.process_selection.selected_processes,
+                plot_height,
+                min_window,
+            );
         } else {
             ui.label("Loading...");
         }
-
     }
 }
 
-fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], process_info: &HashMap<Pid, ProcessInfo>, selected_processes: &HashSet<Pid>, plot_height: f32, min_window: f64) {
+fn memory_plot(
+    ui: &mut egui::Ui,
+    snapshots: &[SnapshotData],
+    process_info: &HashMap<Pid, ProcessInfo>,
+    selected_processes: &HashSet<Pid>,
+    plot_height: f32,
+    min_window: f64,
+) {
     let Some(latest) = snapshots.last() else {
         return;
     };
@@ -116,7 +129,8 @@ fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], process_info: &Has
             ]
         })
         .collect();
-    let selected_points = selected_memory_points(snapshots, latest, selected_processes, process_info);
+    let selected_points =
+        selected_memory_points(snapshots, latest, selected_processes, process_info);
 
     Plot::new("sysinfo_memory_plot")
         .height(plot_height)
@@ -131,10 +145,10 @@ fn memory_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], process_info: &Has
         .allow_double_click_reset(false)
         .legend(Legend::default().position(Corner::LeftTop))
         .custom_x_axes(vec![
-            AxisHints::new_x().formatter(|mark, _| format_seconds_ago(mark.value))
+            AxisHints::new_x().formatter(|mark, _| format_seconds_ago(mark.value)),
         ])
         .custom_y_axes(vec![
-            AxisHints::new_y().formatter(|mark, _| format!("{:.0}%", mark.value))
+            AxisHints::new_y().formatter(|mark, _| format!("{:.0}%", mark.value)),
         ])
         .show(ui, |plot_ui| {
             plot_ui.set_plot_bounds_x(MIN_TIME_SECONDS..=max_time_seconds);

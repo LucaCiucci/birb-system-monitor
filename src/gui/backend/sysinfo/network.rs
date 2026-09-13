@@ -5,8 +5,8 @@ use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
 use human_units::FormatSize;
 
 use crate::gui::{
-    backend::sysinfo::{SnapshotData, SysinfoSharedState},
     BackendPanel,
+    backend::sysinfo::{SnapshotData, SysinfoSharedState},
 };
 
 const MIN_TIME_SECONDS: f64 = 0.0;
@@ -49,7 +49,6 @@ impl BackendPanel for NetworkPanel {
         } else {
             ui.label("Loading...");
         }
-
     }
 }
 
@@ -70,8 +69,18 @@ fn network_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], plot_height: f32,
                 .duration_since(prev.captured_at)
                 .as_secs_f64()
                 .max(0.001);
-            let rx_rate = (curr.network_stats.total_received.saturating_sub(prev.network_stats.total_received)) as f64 / dt;
-            let tx_rate = (curr.network_stats.total_transmitted.saturating_sub(prev.network_stats.total_transmitted)) as f64 / dt;
+            let rx_rate = (curr
+                .network_stats
+                .total_received
+                .saturating_sub(prev.network_stats.total_received))
+                as f64
+                / dt;
+            let tx_rate = (curr
+                .network_stats
+                .total_transmitted
+                .saturating_sub(prev.network_stats.total_transmitted))
+                as f64
+                / dt;
             let seconds_ago = latest
                 .captured_at
                 .duration_since(curr.captured_at)
@@ -81,14 +90,8 @@ fn network_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], plot_height: f32,
         .collect();
 
     // Add a zero point at "now" for continuity
-    let rx_points: PlotPoints = rate_points
-        .iter()
-        .map(|(rx, _)| *rx)
-        .collect();
-    let tx_points: PlotPoints = rate_points
-        .iter()
-        .map(|(_, tx)| *tx)
-        .collect();
+    let rx_points: PlotPoints = rate_points.iter().map(|(rx, _)| *rx).collect();
+    let tx_points: PlotPoints = rate_points.iter().map(|(_, tx)| *tx).collect();
 
     // Determine y-axis range
     let max_rate = rate_points
@@ -110,10 +113,10 @@ fn network_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], plot_height: f32,
         .allow_double_click_reset(false)
         .legend(Legend::default().position(Corner::LeftTop))
         .custom_x_axes(vec![
-            AxisHints::new_x().formatter(|mark, _| format_seconds_ago(mark.value))
+            AxisHints::new_x().formatter(|mark, _| format_seconds_ago(mark.value)),
         ])
         .custom_y_axes(vec![
-            AxisHints::new_y().formatter(|mark, _| format_bytes_per_sec(mark.value))
+            AxisHints::new_y().formatter(|mark, _| format_bytes_per_sec(mark.value)),
         ]);
 
     plot.show(ui, |plot_ui| {

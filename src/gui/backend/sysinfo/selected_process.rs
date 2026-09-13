@@ -1,13 +1,13 @@
 use std::{collections::HashSet, fmt::Display, sync::Arc};
 
-use egui::{mutex::Mutex, Grid, RichText, WidgetText};
+use egui::{Grid, RichText, WidgetText, mutex::Mutex};
 use human_units::{FormatDuration, FormatSize};
 use serde::{Deserialize, Serialize};
 use sysinfo::Pid;
 
 use crate::gui::{
-    backend::sysinfo::{ProcessDetail, ProcessMetrics, SysinfoSharedState},
     BackendPanel,
+    backend::sysinfo::{ProcessDetail, ProcessMetrics, SysinfoSharedState},
 };
 
 #[derive(Serialize, Deserialize)]
@@ -83,11 +83,7 @@ impl BackendPanel for SelectedProcessPanel {
             ui.label("Selected index:");
             let mut index = self.config.selected_index + 1;
             if ui
-                .add(
-                    egui::DragValue::new(&mut index)
-                        .range(1..=100)
-                        .speed(1),
-                )
+                .add(egui::DragValue::new(&mut index).range(1..=100).speed(1))
                 .changed()
             {
                 self.config.selected_index = index.saturating_sub(1);
@@ -191,16 +187,8 @@ fn process_summary(ui: &mut egui::Ui, detail: &ProcessDetail, metrics: &ProcessM
                     .map(|id| format!("{id:?}"))
                     .unwrap_or_else(|| "unknown".into()),
             );
-            value_row(
-                ui,
-                "Start time",
-                &format_time(detail.start_time),
-            );
-            value_row(
-                ui,
-                "Run time",
-                &format_duration_secs(detail.run_time),
-            );
+            value_row(ui, "Start time", &format_time(detail.start_time));
+            value_row(ui, "Run time", &format_duration_secs(detail.run_time));
             value_row(
                 ui,
                 "Session ID",

@@ -6,8 +6,8 @@ use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
 use serde::{Deserialize, Serialize};
 
 use crate::gui::{
-    backend::sysinfo::{SnapshotData, SysinfoSharedState},
     BackendPanel,
+    backend::sysinfo::{SnapshotData, SysinfoSharedState},
 };
 
 const MIN_TIME_SECONDS: f64 = 0.0;
@@ -109,7 +109,13 @@ impl BackendPanel for TemperatureChartPanel {
 
         let plot_height = ui.available_height().clamp(100.0, 600.0);
         let min_window = data.config.min_plot_window_secs();
-        temperature_plot(ui, &data.data, &self.config.enabled, plot_height, min_window);
+        temperature_plot(
+            ui,
+            &data.data,
+            &self.config.enabled,
+            plot_height,
+            min_window,
+        );
     }
 
     fn save_config(&self) -> anyhow::Result<serde_json::Value> {
@@ -126,7 +132,9 @@ fn temperature_plot(
     ui: &mut egui::Ui,
     snapshots: &[SnapshotData],
     enabled: &BTreeSet<String>,
-    plot_height: f32,    min_window: f64,) {
+    plot_height: f32,
+    min_window: f64,
+) {
     let Some(latest) = snapshots.last() else {
         return;
     };
@@ -156,8 +164,12 @@ fn temperature_plot(
             }
             if let Some(temp) = component.temperature {
                 let t = temp as f64;
-                if t > max_temp { max_temp = t; }
-                if t < min_temp { min_temp = t; }
+                if t > max_temp {
+                    max_temp = t;
+                }
+                if t < min_temp {
+                    min_temp = t;
+                }
             }
         }
     }
@@ -184,10 +196,10 @@ fn temperature_plot(
         .allow_double_click_reset(false)
         .legend(Legend::default().position(Corner::LeftTop))
         .custom_x_axes(vec![
-            AxisHints::new_x().formatter(|mark, _| format_seconds_ago(mark.value))
+            AxisHints::new_x().formatter(|mark, _| format_seconds_ago(mark.value)),
         ])
         .custom_y_axes(vec![
-            AxisHints::new_y().formatter(|mark, _| format!("{:.0}°C", mark.value))
+            AxisHints::new_y().formatter(|mark, _| format!("{:.0}°C", mark.value)),
         ]);
 
     plot.show(ui, |plot_ui| {
@@ -225,7 +237,10 @@ fn temperature_plot(
 
 fn truncate_label(label: &str) -> String {
     if label.len() > MAX_LEGEND_LEN {
-        let mut s = label.chars().take(MAX_LEGEND_LEN.saturating_sub(1)).collect::<String>();
+        let mut s = label
+            .chars()
+            .take(MAX_LEGEND_LEN.saturating_sub(1))
+            .collect::<String>();
         s.push('…');
         s
     } else {
@@ -257,16 +272,16 @@ fn format_seconds_ago(seconds_ago: f64) -> String {
 
 fn temp_line_color(index: usize) -> Color32 {
     const COLORS: [Color32; 10] = [
-        Color32::from_rgb(244, 67, 54),    // red
-        Color32::from_rgb(255, 152, 0),    // orange
-        Color32::from_rgb(255, 235, 59),   // yellow
-        Color32::from_rgb(76, 175, 80),    // green
-        Color32::from_rgb(33, 150, 243),   // blue
-        Color32::from_rgb(156, 39, 176),   // purple
-        Color32::from_rgb(0, 188, 212),    // cyan
-        Color32::from_rgb(233, 30, 99),    // pink
-        Color32::from_rgb(96, 125, 139),   // bluegrey
-        Color32::from_rgb(121, 85, 72),    // brown
+        Color32::from_rgb(244, 67, 54),  // red
+        Color32::from_rgb(255, 152, 0),  // orange
+        Color32::from_rgb(255, 235, 59), // yellow
+        Color32::from_rgb(76, 175, 80),  // green
+        Color32::from_rgb(33, 150, 243), // blue
+        Color32::from_rgb(156, 39, 176), // purple
+        Color32::from_rgb(0, 188, 212),  // cyan
+        Color32::from_rgb(233, 30, 99),  // pink
+        Color32::from_rgb(96, 125, 139), // bluegrey
+        Color32::from_rgb(121, 85, 72),  // brown
     ];
     COLORS[index % COLORS.len()]
 }

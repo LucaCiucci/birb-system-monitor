@@ -23,7 +23,6 @@ const SENTENCES: &[&str] = &[
     "All threads are asymptotically free until they hit the strong force of mutex contention.",
     "The uptime counter is the system's proper time. Reboots are just suspicious coordinate transformations.",
     "Disk I/O is friction: negligible in toy models, dominant in reality, and always opposed to progress.",
-
     "The scheduler has solved the many-body problem by giving up and calling it fairness.",
     "This process tree has more branches than a poorly reviewed Git history.",
     "The kernel is calm. This is not evidence that the situation is under control.",
@@ -32,7 +31,6 @@ const SENTENCES: &[&str] = &[
     "One process is leaking memory. Another is leaking confidence.",
     "The fan curve suggests the laptop has entered its turbine era.",
     "Thermal throttling is just the CPU practicing mindfulness.",
-
     "A static analyzer looked at this system and requested a smaller example.",
     "The dependency graph is acyclic, except emotionally.",
     "The borrow checker cannot save this process. It moved itself into swap.",
@@ -41,7 +39,6 @@ const SENTENCES: &[&str] = &[
     "The stack is fine. The heap has started writing poetry.",
     "This task is technically running, in the same sense that a PhD is technically progressing.",
     "The logs contain no errors, only increasingly specific warnings from the universe.",
-
     "Prolog could probably explain this state, but only after allocating 26 GB of RAM.",
     "The system is mostly deterministic, except for drivers, firmware, and vibes.",
     "The GPU is idle, but in a judgmental way.",

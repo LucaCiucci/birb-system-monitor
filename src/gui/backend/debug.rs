@@ -1,5 +1,6 @@
-use crate::gui::{Backend, BackendPanel, BackendPanelId, BackendPanelInfo, widgets::placeholder_sentence};
-
+use crate::gui::{
+    Backend, BackendPanel, BackendPanelId, BackendPanelInfo, widgets::placeholder_sentence,
+};
 
 pub struct DebugBackend;
 
@@ -9,13 +10,11 @@ impl Backend for DebugBackend {
     }
 
     fn panels(&self) -> Vec<BackendPanelInfo> {
-        vec![
-            BackendPanelInfo {
-                id: BackendPanelId("widget_gallery".into()),
-                title: "Widget Gallery".into(),
-                description: "A panel showcasing various widgets for testing and debugging.".into(),
-            },
-        ]
+        vec![BackendPanelInfo {
+            id: BackendPanelId("widget_gallery".into()),
+            title: "Widget Gallery".into(),
+            description: "A panel showcasing various widgets for testing and debugging.".into(),
+        }]
     }
 
     fn new_panel(&self, panel_id: &BackendPanelId) -> Box<dyn BackendPanel> {

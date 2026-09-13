@@ -4,18 +4,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bollard::{
-    Docker, API_DEFAULT_VERSION,
-};
-use egui::{mutex::Mutex, WidgetText};
+use bollard::{API_DEFAULT_VERSION, Docker};
+use egui::{WidgetText, mutex::Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::gui::{
-    backend::docker::{
-        containers::ContainersPanel,
-        images::ImagesPanel,
-    },
     Backend, BackendPanel, BackendPanelId, BackendPanelInfo,
+    backend::docker::{containers::ContainersPanel, images::ImagesPanel},
 };
 
 mod containers;
@@ -77,7 +72,9 @@ impl Drop for DockerBackend {
         data.should_stop = true;
         drop(data);
         if let Some(updater) = self.updater.take() {
-            updater.join().expect("Failed to join docker updater thread");
+            updater
+                .join()
+                .expect("Failed to join docker updater thread");
         }
     }
 }
@@ -161,7 +158,7 @@ fn worker_thread(state: Arc<Mutex<DockerSharedState>>) {
 
     rt.block_on(async move {
         loop {
-                    let (socket_path, update_interval, should_stop) = {
+            let (socket_path, update_interval, should_stop) = {
                 let data = state.lock();
                 if data.should_stop {
                     return;
@@ -178,11 +175,7 @@ fn worker_thread(state: Arc<Mutex<DockerSharedState>>) {
             }
 
             // Reconnect every cycle (cheap for unix sockets)
-            let docker = Docker::connect_with_socket(
-                &socket_path,
-                120,
-                API_DEFAULT_VERSION,
-            );
+            let docker = Docker::connect_with_socket(&socket_path, 120, API_DEFAULT_VERSION);
 
             match docker {
                 Ok(docker) => {
@@ -227,9 +220,7 @@ fn worker_thread(state: Arc<Mutex<DockerSharedState>>) {
 async fn list_containers(docker: &Docker) -> anyhow::Result<Vec<SimpleContainer>> {
     use bollard::query_parameters::ListContainersOptionsBuilder;
 
-    let options = ListContainersOptionsBuilder::default()
-        .all(true)
-        .build();
+    let options = ListContainersOptionsBuilder::default().all(true).build();
 
     let containers = docker.list_containers(Some(options)).await?;
 
@@ -251,7 +242,13 @@ async fn list_containers(docker: &Docker) -> anyhow::Result<Vec<SimpleContainer>
                 .map(|p| {
                     let typ = p.typ.map(|t| t.to_string()).unwrap_or_else(|| "tcp".into());
                     match p.public_port {
-                        Some(pub_port) => format!("{}:{}->{}/{}", p.ip.as_deref().unwrap_or("0.0.0.0"), pub_port, p.private_port, typ),
+                        Some(pub_port) => format!(
+                            "{}:{}->{}/{}",
+                            p.ip.as_deref().unwrap_or("0.0.0.0"),
+                            pub_port,
+                            p.private_port,
+                            typ
+                        ),
                         None => format!("{}/{}", p.private_port, typ),
                     }
                 })
@@ -274,9 +271,7 @@ async fn list_containers(docker: &Docker) -> anyhow::Result<Vec<SimpleContainer>
 async fn list_images(docker: &Docker) -> anyhow::Result<Vec<SimpleImage>> {
     use bollard::query_parameters::ListImagesOptionsBuilder;
 
-    let options = ListImagesOptionsBuilder::default()
-        .all(true)
-        .build();
+    let options = ListImagesOptionsBuilder::default().all(true).build();
 
     let images = docker.list_images(Some(options)).await?;
 

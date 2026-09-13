@@ -2,7 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use egui::{Grid, WidgetText, mutex::Mutex};
 
-use crate::gui::{BackendPanel, backend::sysinfo::{SysinfoConfig, SysinfoSharedState}};
+use crate::gui::{
+    BackendPanel,
+    backend::sysinfo::{SysinfoConfig, SysinfoSharedState},
+};
 
 pub(super) struct SettingsPanel {
     state: Arc<Mutex<SysinfoSharedState>>,
@@ -56,10 +59,7 @@ impl BackendPanel for SettingsPanel {
                     if readings == 0 {
                         ui.label("(full range)");
                     } else {
-                        ui.label(format!(
-                            "≈ {:.0}s",
-                            interval_secs * readings as f32
-                        ));
+                        ui.label(format!("≈ {:.0}s", interval_secs * readings as f32));
                     }
                 });
                 ui.end_row();

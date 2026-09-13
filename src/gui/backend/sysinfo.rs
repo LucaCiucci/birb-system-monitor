@@ -5,19 +5,21 @@ use std::{
     time::{Duration, Instant},
 };
 
-use egui::{mutex::Mutex, WidgetText};
+use egui::{WidgetText, mutex::Mutex};
 use serde::{Deserialize, Serialize};
-use sysinfo::{DiskUsage, Disks, Gid, Networks, Pid, ProcessesToUpdate, ProcessStatus, System, Uid};
+use sysinfo::{
+    DiskUsage, Disks, Gid, Networks, Pid, ProcessStatus, ProcessesToUpdate, System, Uid,
+};
 use ustr::Ustr;
 
 use crate::gui::{
-    backend::sysinfo::{
-        cpu::CpuPanel, dashboard::DashboardPanel, disk_io::DiskIoPanel,
-        memory::MemoryPanel, network::NetworkPanel, proc_list::ProcessesPanel,
-        selected_process::SelectedProcessPanel, settings::SettingsPanel,
-        temperature::TemperaturePanel, temperature_chart::TemperatureChartPanel,
-    },
     Backend, BackendPanel, BackendPanelId, BackendPanelInfo,
+    backend::sysinfo::{
+        cpu::CpuPanel, dashboard::DashboardPanel, disk_io::DiskIoPanel, memory::MemoryPanel,
+        network::NetworkPanel, proc_list::ProcessesPanel, selected_process::SelectedProcessPanel,
+        settings::SettingsPanel, temperature::TemperaturePanel,
+        temperature_chart::TemperatureChartPanel,
+    },
 };
 
 mod cpu;
@@ -169,7 +171,11 @@ impl SysinfoConfig {
 
     /// Number of historical snapshots to keep in memory.
     pub fn max_history_readings(&self) -> usize {
-        if self.max_readings == 0 { 600 } else { self.max_readings }
+        if self.max_readings == 0 {
+            600
+        } else {
+            self.max_readings
+        }
     }
 }
 
@@ -571,7 +577,8 @@ fn worker_thread(state: Arc<Mutex<SysinfoSharedState>>) {
         }
 
         // Remove dead PIDs from process_info
-        data.process_info.retain(|pid, _| snapshot_pids.contains(pid));
+        data.process_info
+            .retain(|pid, _| snapshot_pids.contains(pid));
 
         // Push snapshot (after process_info so indices align)
         data.data.push(snapshot);
