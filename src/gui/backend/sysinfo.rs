@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use sysinfo::{DiskUsage, Disks, Gid, Networks, Pid, ProcessesToUpdate, ProcessStatus, System, Uid};
 use ustr::Ustr;
 
-use crate::{
+use crate::gui::{
     backend::sysinfo::{
         cpu::CpuPanel, dashboard::DashboardPanel, disk_io::DiskIoPanel,
         memory::MemoryPanel, network::NetworkPanel, proc_list::ProcessesPanel,

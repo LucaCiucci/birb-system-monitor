@@ -5,7 +5,7 @@ use egui_plot::{AxisHints, Corner, FilledArea, Legend, Line, Plot, PlotPoints};
 use serde::{Deserialize, Serialize};
 use sysinfo::Pid;
 
-use crate::{backend::sysinfo::{ProcessInfo, SysinfoSharedState}, BackendPanel};
+use crate::gui::{BackendPanel, backend::sysinfo::{ProcessInfo, SnapshotData, SysinfoSharedState}};
 
 const MIN_USAGE_PERCENT: f64 = 0.0;
 const MAX_USAGE_PERCENT: f64 = 100.0;
@@ -108,7 +108,7 @@ impl BackendPanel for CpuPanel {
 
 fn cpu_plot(
     ui: &mut egui::Ui,
-    snapshots: &[crate::backend::sysinfo::SnapshotData],
+    snapshots: &[SnapshotData],
     process_info: &HashMap<Pid, ProcessInfo>,
     show_per_cpu: bool,
     selected_processes: &HashSet<Pid>,
@@ -198,8 +198,8 @@ fn cpu_plot(
 }
 
 fn selected_cpu_points(
-    snapshots: &[crate::backend::sysinfo::SnapshotData],
-    latest: &crate::backend::sysinfo::SnapshotData,
+    snapshots: &[SnapshotData],
+    latest: &SnapshotData,
     selected_processes: &HashSet<Pid>,
     process_info: &HashMap<Pid, ProcessInfo>,
 ) -> PlotPoints<'static> {
@@ -229,8 +229,8 @@ struct CpuLayer {
 }
 
 fn stacked_cpu_layers(
-    snapshots: &[crate::backend::sysinfo::SnapshotData],
-    latest: &crate::backend::sysinfo::SnapshotData,
+    snapshots: &[SnapshotData],
+    latest: &SnapshotData,
 ) -> Vec<CpuLayer> {
     let cpu_count = latest.cpu_stats.per_cpu_usage.len();
     let mut layers = (0..cpu_count)
@@ -281,8 +281,8 @@ fn stacked_cpu_layers(
 }
 
 fn total_cpu_layer(
-    snapshots: &[crate::backend::sysinfo::SnapshotData],
-    latest: &crate::backend::sysinfo::SnapshotData,
+    snapshots: &[SnapshotData],
+    latest: &SnapshotData,
 ) -> CpuLayer {
     let mut layer = CpuLayer {
         cpu_index: 0,
@@ -308,8 +308,8 @@ fn total_cpu_layer(
 }
 
 fn max_time_seconds(
-    snapshots: &[crate::backend::sysinfo::SnapshotData],
-    latest: &crate::backend::sysinfo::SnapshotData,
+    snapshots: &[SnapshotData],
+    latest: &SnapshotData,
     min_window: f64,
 ) -> f64 {
     snapshots

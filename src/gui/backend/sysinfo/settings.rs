@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use egui::{Grid, WidgetText, mutex::Mutex};
 
-use crate::{backend::sysinfo::SysinfoSharedState, BackendPanel};
+use crate::gui::{BackendPanel, backend::sysinfo::{SysinfoConfig, SysinfoSharedState}};
 
 pub(super) struct SettingsPanel {
     state: Arc<Mutex<SysinfoSharedState>>,
@@ -70,7 +70,7 @@ impl BackendPanel for SettingsPanel {
                 ui.end_row();
             });
 
-        let new_config = crate::backend::sysinfo::SysinfoConfig {
+        let new_config = SysinfoConfig {
             update_interval: Duration::from_secs_f32(interval_secs),
             max_readings: readings,
         };

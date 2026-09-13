@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Duration};
 
-use crate::{Backend, BackendId, BackendPanel, PanelId, backend::init_all_backends, save::Profile, tabs::{Tab, default_dock_state}, widgets::placeholder_sentence};
+use super::{Backend, BackendId, BackendPanel, PanelId, backend::init_all_backends, save::Profile, tabs::{Tab, default_dock_state}, widgets::placeholder_sentence};
 use eframe::egui;
 use egui::{Button, Color32, Id, MenuBar, Ui, Vec2, WidgetText, accesskit::Uuid};
 use egui_dock::{DockArea, TabViewer};

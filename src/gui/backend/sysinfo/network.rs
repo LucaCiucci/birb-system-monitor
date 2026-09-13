@@ -4,7 +4,7 @@ use egui::{Color32, WidgetText, mutex::Mutex};
 use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
 use human_units::FormatSize;
 
-use crate::{
+use crate::gui::{
     backend::sysinfo::{SnapshotData, SysinfoSharedState},
     BackendPanel,
 };

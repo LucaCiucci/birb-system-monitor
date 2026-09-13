@@ -6,7 +6,7 @@ use ordered_hash_map::OrderedHashMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{BackendId, BackendPanelId, tabs::Tab};
+use super::{BackendId, BackendPanelId, tabs::Tab};
 
 
 

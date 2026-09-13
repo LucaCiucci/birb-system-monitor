@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use egui::Context;
 
-use crate::{Backend, BackendId};
+use super::{Backend, BackendId};
 
 
 pub mod debug;

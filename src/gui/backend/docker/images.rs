@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use egui::{mutex::Mutex, Color32, Grid, Ui, WidgetText};
 
-use crate::{
+use crate::gui::{
     backend::docker::DockerSharedState,
     BackendPanel,
 };

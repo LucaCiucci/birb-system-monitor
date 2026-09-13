@@ -4,7 +4,7 @@ use egui_dock::{DockState, NodeIndex};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::PanelId;
+use super::PanelId;
 
 
 

@@ -14,7 +14,7 @@ use sysinfo::Pid;
 
 use std::collections::{HashMap, HashSet};
 
-use crate::{
+use crate::gui::{
     backend::sysinfo::{ProcessInfo, SysinfoSharedState},
     BackendPanel,
 };

@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use egui::{Color32, Grid, ProgressBar, WidgetText, mutex::Mutex};
 
-use crate::{
+use crate::gui::{
     backend::sysinfo::SysinfoSharedState,
     BackendPanel,
 };

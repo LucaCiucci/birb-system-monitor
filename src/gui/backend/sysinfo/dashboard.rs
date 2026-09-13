@@ -6,7 +6,7 @@ use egui_plot::{Corner, FilledArea, Legend, Line, Plot, PlotPoints};
 use human_units::FormatSize;
 use sysinfo::Pid;
 
-use crate::{
+use crate::gui::{
     backend::sysinfo::{ProcessInfo, SnapshotData, SysinfoSharedState},
     BackendPanel,
 };

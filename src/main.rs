@@ -1,5 +1,7 @@
-use birb_system_monitor_gui::gui_main;
 use clap::{Parser, builder::{Styles, styling::AnsiColor}};
+
+mod gui;
+use gui::gui_main;
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();

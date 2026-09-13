@@ -10,7 +10,7 @@ use bollard::{
 use egui::{mutex::Mutex, WidgetText};
 use serde::{Deserialize, Serialize};
 
-use crate::{
+use crate::gui::{
     backend::docker::{
         containers::ContainersPanel,
         images::ImagesPanel,

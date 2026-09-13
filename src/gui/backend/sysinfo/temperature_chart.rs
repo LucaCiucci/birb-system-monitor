@@ -5,7 +5,7 @@ use egui::{Color32, WidgetText, mutex::Mutex};
 use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
 use serde::{Deserialize, Serialize};
 
-use crate::{
+use crate::gui::{
     backend::sysinfo::{SnapshotData, SysinfoSharedState},
     BackendPanel,
 };

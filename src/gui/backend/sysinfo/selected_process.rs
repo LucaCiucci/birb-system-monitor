@@ -5,7 +5,7 @@ use human_units::{FormatDuration, FormatSize};
 use serde::{Deserialize, Serialize};
 use sysinfo::Pid;
 
-use crate::{
+use crate::gui::{
     backend::sysinfo::{ProcessDetail, ProcessMetrics, SysinfoSharedState},
     BackendPanel,
 };
