@@ -13,7 +13,7 @@ use sysinfo::{
 use ustr::Ustr;
 
 use crate::gui::{
-    Backend, BackendPanel, BackendPanelId, BackendPanelInfo,
+    BackendOLD, BackendPanel, BackendPanelId, BackendPanelInfo,
     backend::sysinfo::{
         cpu::CpuPanel, dashboard::DashboardPanel, disk_io::DiskIoPanel, memory::MemoryPanel,
         network::NetworkPanel, proc_list::ProcessesPanel, selected_process::SelectedProcessPanel,
@@ -64,7 +64,7 @@ impl SysinfoBackend {
     }
 }
 
-impl Backend for SysinfoBackend {
+impl BackendOLD for SysinfoBackend {
     fn name(&self) -> WidgetText {
         "Sysinfo".into()
     }

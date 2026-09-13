@@ -1,7 +1,7 @@
 use std::{collections::HashMap, time::Duration};
 
 use super::{
-    Backend, BackendId, BackendPanel, PanelId,
+    BackendOLD, BackendId, BackendPanel, PanelId,
     backend::init_all_backends,
     save::Profile,
     tabs::{Tab, default_dock_state},
@@ -101,7 +101,7 @@ pub fn main() -> anyhow::Result<()> {
 
 struct MonitorApp {
     loaded_profile: Option<Profile>,
-    backends: HashMap<BackendId, Box<dyn Backend>>,
+    backends: HashMap<BackendId, Box<dyn BackendOLD>>,
     panels: HashMap<(PanelId, Uuid), Box<dyn BackendPanel>>,
     dock_states: OrderedHashMap<String, egui_dock::DockState<Tab>>,
     selected_tab: String,
@@ -325,14 +325,14 @@ impl eframe::App for MonitorApp {
 
 struct MyTabViewer<'a> {
     loaded_profile: &'a Option<Profile>,
-    backends: &'a HashMap<BackendId, Box<dyn Backend>>,
+    backends: &'a HashMap<BackendId, Box<dyn BackendOLD>>,
     panels: &'a mut HashMap<(PanelId, Uuid), Box<dyn BackendPanel>>,
 }
 
 impl<'a> MyTabViewer<'a> {
     fn new(
         loaded_profile: &'a Option<Profile>,
-        backends: &'a HashMap<BackendId, Box<dyn Backend>>,
+        backends: &'a HashMap<BackendId, Box<dyn BackendOLD>>,
         panels: &'a mut HashMap<(PanelId, Uuid), Box<dyn BackendPanel>>,
     ) -> Self {
         Self {

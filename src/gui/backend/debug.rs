@@ -1,10 +1,10 @@
 use crate::gui::{
-    Backend, BackendPanel, BackendPanelId, BackendPanelInfo, widgets::placeholder_sentence,
+    BackendOLD, BackendPanel, BackendPanelId, BackendPanelInfo, widgets::placeholder_sentence,
 };
 
 pub struct DebugBackend;
 
-impl Backend for DebugBackend {
+impl BackendOLD for DebugBackend {
     fn name(&self) -> egui::WidgetText {
         "Debug".into()
     }

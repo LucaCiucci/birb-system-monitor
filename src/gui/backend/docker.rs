@@ -9,7 +9,7 @@ use egui::{WidgetText, mutex::Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::gui::{
-    Backend, BackendPanel, BackendPanelId, BackendPanelInfo,
+    BackendOLD, BackendPanel, BackendPanelId, BackendPanelInfo,
     backend::docker::{containers::ContainersPanel, images::ImagesPanel},
 };
 
@@ -94,7 +94,7 @@ impl DockerBackend {
     }
 }
 
-impl Backend for DockerBackend {
+impl BackendOLD for DockerBackend {
     fn name(&self) -> WidgetText {
         "Docker".into()
     }

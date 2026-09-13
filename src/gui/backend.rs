@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use egui::Context;
 
-use super::{Backend, BackendId};
+use super::{BackendOLD, BackendId};
 
 pub mod debug;
 pub mod docker;
 pub mod sysinfo;
 
-pub fn init_all_backends(cx: &Context) -> HashMap<BackendId, Box<dyn Backend>> {
-    let mut backends: HashMap<BackendId, Box<dyn Backend>> = HashMap::new();
+pub fn init_all_backends(cx: &Context) -> HashMap<BackendId, Box<dyn BackendOLD>> {
+    let mut backends: HashMap<BackendId, Box<dyn BackendOLD>> = HashMap::new();
     backends.insert(BackendId("debug".into()), Box::new(debug::DebugBackend));
     backends.insert(
         BackendId("sysinfo".into()),

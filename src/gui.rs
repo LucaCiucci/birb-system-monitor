@@ -71,7 +71,7 @@ impl<'de> Deserialize<'de> for BackendId {
     }
 }
 
-pub trait Backend {
+pub trait BackendOLD {
     fn name(&self) -> WidgetText;
     fn save_config(&self) -> anyhow::Result<serde_json::Value> {
         Ok(serde_json::Value::Null)
