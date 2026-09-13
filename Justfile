@@ -36,8 +36,18 @@ clean:
     cargo clean
     rm -rf build-dir *.AppDir *.AppImage
 
-ci: check-unused-deps
+ci: check check-all
 
+check-all: check check-fmt check-clippy check-unused-deps
+
+check:
+    cargo check
+
+check-fmt:
+    cargo fmt -- --check
+
+check-clippy:
+    cargo clippy -- -D warnings
 check-unused-deps:
     cargo +nightly udeps
     cargo machete
