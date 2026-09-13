@@ -1,12 +1,20 @@
-# Build all distribution packages
-# ─────────────────────────────────────────────────
+
+# List all available targets
+default:
+    @just --list
+    @exit 1
+
+# Create all Linux packages
+package-linux: package-deb flatpak appimage
 
 # Build a .deb package using cargo-deb
-deb:
+package-deb:
     cargo deb
+    mkdir -p dist
+    cp target/debian/birb-monitor_*.deb dist/
 
-install-deb: deb
-    sudo dpkg -i target/debian/birb-monitor_*.deb
+install-deb: package-deb
+    sudo dpkg -i dist/birb-monitor_*.deb
 
 uninstall-deb:
     sudo dpkg -r birb-monitor
@@ -19,9 +27,6 @@ flatpak:
 appimage:
     ./build-appimage.sh
 
-# Build all three distribution formats
-all: deb flatpak appimage
-
 # Just build the release binary (no packaging)
 binary:
     cargo build --release
@@ -30,7 +35,3 @@ binary:
 clean:
     cargo clean
     rm -rf build-dir *.AppDir *.AppImage
-
-# List all available targets
-default:
-    @just --list
