@@ -10,36 +10,104 @@ pub mod save;
 pub mod tabs;
 pub mod widgets;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct PanelId {
-    pub backend: BackendId,
-    pub panel: BackendPanelId,
+/// Panel kind; Tab pairs this with a UUID for independently configured instances.
+/// Serialize using the previous layout representation to preserve saved profiles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "SavedPanelId", into = "SavedPanelId")]
+pub enum PanelId {
+    Cpu,
+    Memory,
+    Processes,
+    SelectedProcess,
+    Network,
+    DiskIo,
+    Dashboard,
+    Settings,
+    Temperature,
+    TemperatureChart,
+    Containers,
+    Images,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SavedPanelId {
+    backend: BackendId,
+    panel: BackendPanelId,
+}
+
+impl PanelId {
+    pub fn backend(&self) -> BackendId {
+        BackendId(
+            match self {
+                Self::Containers | Self::Images => "docker",
+                _ => "sysinfo",
+            }
+            .into(),
+        )
+    }
+    pub fn panel(&self) -> BackendPanelId {
+        BackendPanelId(
+            match self {
+                Self::Cpu => "cpu",
+                Self::Memory => "memory",
+                Self::Processes => "processes",
+                Self::SelectedProcess => "selected-process",
+                Self::Network => "network",
+                Self::DiskIo => "disk-io",
+                Self::Dashboard => "dashboard",
+                Self::Settings => "settings",
+                Self::Temperature => "temperature",
+                Self::TemperatureChart => "temperature-chart",
+                Self::Containers => "containers",
+                Self::Images => "images",
+            }
+            .into(),
+        )
+    }
+    pub fn new(backend: BackendId, panel: BackendPanelId) -> Self {
+        format!("{backend}/{panel}")
+            .parse()
+            .expect("unknown built-in panel")
+    }
 }
 
 impl Display for PanelId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}", self.backend, self.panel)
+        write!(f, "{}/{}", self.backend(), self.panel())
     }
 }
-
 impl FromStr for PanelId {
     type Err = String;
-
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.splitn(2, '/').collect();
-        if parts.len() != 2 {
-            return Err(format!("Invalid PanelId format: '{}'", s));
-        }
-        Ok(PanelId {
-            backend: BackendId(parts[0].into()),
-            panel: BackendPanelId(parts[1].into()),
+        Ok(match s {
+            "sysinfo/cpu" => Self::Cpu,
+            "sysinfo/memory" => Self::Memory,
+            "sysinfo/processes" => Self::Processes,
+            "sysinfo/selected-process" => Self::SelectedProcess,
+            "sysinfo/network" => Self::Network,
+            "sysinfo/disk-io" => Self::DiskIo,
+            "sysinfo/dashboard" => Self::Dashboard,
+            "sysinfo/settings" => Self::Settings,
+            "sysinfo/temperature" => Self::Temperature,
+            "sysinfo/temperature-chart" => Self::TemperatureChart,
+            "docker/containers" => Self::Containers,
+            "docker/images" => Self::Images,
+            _ => return Err(format!("Unknown panel: {s}")),
         })
     }
 }
-
-impl PanelId {
-    pub fn new(backend: BackendId, panel: BackendPanelId) -> Self {
-        Self { backend, panel }
+impl TryFrom<SavedPanelId> for PanelId {
+    type Error = String;
+    fn try_from(id: SavedPanelId) -> Result<Self, Self::Error> {
+        format!("{}/{}", id.backend, id.panel).parse()
+    }
+}
+impl From<PanelId> for SavedPanelId {
+    fn from(id: PanelId) -> Self {
+        Self {
+            backend: id.backend(),
+            panel: id.panel(),
+        }
     }
 }
 
@@ -69,18 +137,6 @@ impl<'de> Deserialize<'de> for BackendId {
         let s = String::deserialize(deserializer)?;
         Ok(BackendId(s.into()))
     }
-}
-
-pub trait BackendOLD {
-    fn name(&self) -> WidgetText;
-    fn save_config(&self) -> anyhow::Result<serde_json::Value> {
-        Ok(serde_json::Value::Null)
-    }
-    fn load_config(&mut self, _config: &serde_json::Value) -> anyhow::Result<()> {
-        Ok(())
-    }
-    fn panels(&self) -> Vec<BackendPanelInfo>;
-    fn new_panel(&self, panel_id: &BackendPanelId) -> Box<dyn BackendPanel>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -129,5 +185,21 @@ pub trait BackendPanel {
     }
     fn load_config(&mut self, _config: &serde_json::Value) -> anyhow::Result<()> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn saved_panel_ids_remain_compatible() {
+        for path in ["sysinfo/cpu", "sysinfo/temperature-chart", "docker/images"] {
+            let (backend, panel) = path.split_once('/').unwrap();
+            let old = serde_json::json!({"backend": backend, "panel": panel});
+            let id: PanelId = serde_json::from_value(old.clone()).unwrap();
+            assert_eq!(id.to_string(), path);
+            assert_eq!(serde_json::to_value(id).unwrap(), old);
+        }
+        assert!("sysinfo/unknown".parse::<PanelId>().is_err());
     }
 }

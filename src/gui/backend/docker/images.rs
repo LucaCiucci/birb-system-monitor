@@ -41,7 +41,7 @@ impl BackendPanel for ImagesPanel {
     fn ui(&mut self, ui: &mut Ui) {
         let data = self.data();
 
-        if let Some(ref err) = data.state.error {
+        if let Some(ref err) = data.state.images_error {
             ui.colored_label(Color32::LIGHT_RED, format!("⚠ {err}"));
             return;
         }

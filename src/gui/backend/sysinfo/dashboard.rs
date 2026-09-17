@@ -1,3 +1,4 @@
+use birb_monitor::backend::sysinfo::ComponentsSnapshot;
 use std::{collections::HashMap, collections::HashSet, sync::Arc};
 
 use egui::{Color32, ProgressBar, Stroke, Ui, WidgetText, mutex::Mutex};
@@ -149,13 +150,18 @@ impl BackendPanel for DashboardPanel {
                 // Row 3: Temperature chart
                 body.row(row_height, |mut row| {
                     row.col(|ui| {
-                        mini_temperature_chart(
-                            ui,
-                            latest,
-                            &data.data,
-                            mini_plot_height,
-                            min_window,
-                        );
+                        if let Some(latest) = data.temperatures.last() {
+                            mini_temperature_chart(
+                                ui,
+                                latest,
+                                &data.temperatures,
+                                mini_plot_height,
+                                data.config.temperature_interval.as_secs_f64()
+                                    * data.config.max_readings as f64,
+                            );
+                        } else {
+                            ui.label("Loading temperatures...");
+                        }
                     });
                     if cols >= 2 {
                         row.col(|_ui| {});
@@ -514,8 +520,8 @@ fn mini_disk_io_plot(
 
 fn mini_temperature_chart(
     ui: &mut Ui,
-    latest: &SnapshotData,
-    snapshots: &[SnapshotData],
+    latest: &ComponentsSnapshot,
+    snapshots: &[ComponentsSnapshot],
     plot_height: f32,
     min_window: f64,
 ) {
@@ -529,7 +535,18 @@ fn mini_temperature_chart(
 
     ui.vertical(|ui| {
         ui.label("Temperature");
-        let max_time = max_time_seconds(snapshots, latest, min_window);
+        let max_time = snapshots
+            .first()
+            .map(|first| {
+                latest
+                    .captured_at
+                    .duration_since(first.captured_at)
+                    .unwrap_or_default()
+                    .as_secs_f64()
+            })
+            .unwrap_or_default()
+            .max(min_window)
+            .max(1.0);
 
         // Compute y range
         let mut max_temp = 0.0_f64;

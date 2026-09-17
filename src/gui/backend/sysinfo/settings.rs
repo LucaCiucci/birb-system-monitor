@@ -65,14 +65,19 @@ impl BackendPanel for SettingsPanel {
                 ui.end_row();
 
                 // Current interval display
-                ui.label("Current interval:");
-                ui.label(format!("{:.2} s", interval_secs));
+                ui.label("Applied interval:");
+                ui.label(
+                    data.applied_update_interval
+                        .map(|v| format!("{:.2} s", v.as_secs_f32()))
+                        .unwrap_or_else(|| "Waiting for backend...".into()),
+                );
                 ui.end_row();
             });
 
         let new_config = SysinfoConfig {
             update_interval: Duration::from_secs_f32(interval_secs),
             max_readings: readings,
+            temperature_interval: config.temperature_interval,
         };
 
         if new_config != config {

@@ -112,7 +112,7 @@ fn process_summary(ui: &mut egui::Ui, detail: &ProcessDetail, metrics: &ProcessM
         ui.label(RichText::new(format!("PID {}", detail.pid)).strong());
         ui.label(format!("CPU {:.1}%", metrics.cpu_usage));
         ui.label(format!("Memory {}", metrics.memory.format_size()));
-        if let Some(thread_kind) = detail.thread_kind {
+        if let Some(thread_kind) = &detail.thread_kind {
             ui.label(format!("Thread: {thread_kind:?}"));
         }
     });

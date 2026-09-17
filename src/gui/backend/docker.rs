@@ -1,15 +1,11 @@
-use std::{
-    sync::Arc,
-    thread::JoinHandle,
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::SystemTime};
 
-use birb_monitor::backend::docker::{SimpleContainer, SimpleImage};
+use birb_monitor::backend::docker::{DockerMessage, SimpleContainer, SimpleImage};
 use egui::{WidgetText, mutex::Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::gui::{
-    BackendOLD, BackendPanel, BackendPanelId, BackendPanelInfo,
+    BackendPanel, BackendPanelId, BackendPanelInfo,
     backend::docker::{containers::ContainersPanel, images::ImagesPanel},
 };
 
@@ -38,58 +34,38 @@ pub(super) struct DockerState {
     pub containers: Vec<SimpleContainer>,
     pub images: Vec<SimpleImage>,
     pub connected: bool,
-    pub error: Option<String>,
-    pub last_updated: Option<Instant>,
+    pub containers_error: Option<String>,
+    pub images_error: Option<String>,
+    pub last_updated: Option<SystemTime>,
 }
 
-pub struct DockerBackend {
-    state: Arc<Mutex<DockerSharedState>>,
-    updater: Option<JoinHandle<()>>,
+pub struct DockerFrontend {
+    pub(super) state: Arc<Mutex<DockerSharedState>>,
 }
 
-impl Drop for DockerBackend {
-    fn drop(&mut self) {
-        let mut data = self.state.lock();
-        data.should_stop = true;
-        drop(data);
-        if let Some(updater) = self.updater.take() {
-            updater
-                .join()
-                .expect("Failed to join docker updater thread");
-        }
-    }
-}
-
-impl DockerBackend {
-    pub fn new(cx: egui::Context) -> Self {
-        let state = DockerSharedState::new(cx);
-        let state = Arc::new(Mutex::new(state));
-        let updater = {
-            let state = Arc::clone(&state);
-            std::thread::spawn(move || worker_thread(state))
-        };
+impl DockerFrontend {
+    pub fn new() -> Self {
         Self {
-            state,
-            updater: Some(updater),
+            state: Arc::new(Mutex::new(DockerSharedState::new())),
         }
     }
 }
 
-impl BackendOLD for DockerBackend {
-    fn name(&self) -> WidgetText {
+impl DockerFrontend {
+    pub fn name(&self) -> WidgetText {
         "Docker".into()
     }
 
-    fn save_config(&self) -> anyhow::Result<serde_json::Value> {
+    pub fn save_config(&self) -> anyhow::Result<serde_json::Value> {
         Ok(serde_json::to_value(&self.state.lock().config)?)
     }
 
-    fn load_config(&mut self, config: &serde_json::Value) -> anyhow::Result<()> {
+    pub fn load_config(&mut self, config: &serde_json::Value) -> anyhow::Result<()> {
         self.state.lock().config = serde_json::from_value(config.clone())?;
         Ok(())
     }
 
-    fn panels(&self) -> Vec<BackendPanelInfo> {
+    pub fn panels(&self) -> Vec<BackendPanelInfo> {
         vec![
             BackendPanelInfo {
                 id: BackendPanelId("containers".into()),
@@ -104,7 +80,7 @@ impl BackendOLD for DockerBackend {
         ]
     }
 
-    fn new_panel(&self, panel_id: &BackendPanelId) -> Box<dyn BackendPanel> {
+    pub fn new_panel(&self, panel_id: &BackendPanelId) -> Box<dyn BackendPanel> {
         match panel_id.0.as_str() {
             "containers" => Box::new(ContainersPanel::new(self.state.clone())),
             "images" => Box::new(ImagesPanel::new(self.state.clone())),
@@ -116,28 +92,38 @@ impl BackendOLD for DockerBackend {
 pub(super) struct DockerSharedState {
     pub config: DockerConfig,
     pub state: DockerState,
-    cx: egui::Context,
-    should_stop: bool,
 }
 
 impl DockerSharedState {
-    fn new(cx: egui::Context) -> Self {
+    fn new() -> Self {
         Self {
             config: DockerConfig::default(),
             state: DockerState::default(),
-            cx,
-            should_stop: false,
         }
     }
 }
 
-fn worker_thread(state: Arc<Mutex<DockerSharedState>>) {
-    // Reads now live in backend::docker::DockerHandler. Message consumption
-    // will be wired into the frontend in a subsequent refactor.
-    loop {
-        if state.lock().should_stop {
+impl DockerSharedState {
+    pub(super) fn receive(&mut self, message: DockerMessage) {
+        let DockerMessage::Snapshot(snapshot) = message;
+        if snapshot.socket_path != self.config.socket_path {
             return;
         }
-        std::thread::sleep(Duration::from_millis(100));
+        self.state.connected = snapshot.containers.is_ok() || snapshot.images.is_ok();
+        self.state.containers_error = match snapshot.containers {
+            Ok(value) => {
+                self.state.containers = value;
+                None
+            }
+            Err(error) => Some(error),
+        };
+        self.state.images_error = match snapshot.images {
+            Ok(value) => {
+                self.state.images = value;
+                None
+            }
+            Err(error) => Some(error),
+        };
+        self.state.last_updated = Some(snapshot.captured_at);
     }
 }
