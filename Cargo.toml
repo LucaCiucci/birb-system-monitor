@@ -14,25 +14,12 @@ bollard = "0.21"
 clap = { version = "4", features = ["derive"] }
 #deser-hjson = "2.2.5"
 tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
-eframe = { version = "0.34", default-features = false, features = [
-    "accesskit",
-    "default_fonts",
-    #"ron",
-    #"serde",
-    #"wayland",
-    #"web_screen_reader",
-    #"wgpu",
-    #"wgpu_no_default_features",
-    #"x11",
-
-    "persistence",
-    "glow",
-] }
-egui = "0.34"
-egui_dock = { version = "0.19.1", features = ["serde"] }
-egui_extras = "0.34"
-egui_plot = "=0.35.0"
-egui_table = "0.8.0"
+eframe = { version = "0.36", features = ["persistence"] }
+egui = "0.36"
+egui_dock = { version = "0.21", features = ["serde"] }
+egui_extras = "0.36"
+egui_plot = "0.37"
+egui_table = "0.10"
 fastrand = "2.4.1"
 human-units = "0.5.3"
 itertools = "0.14.0"
