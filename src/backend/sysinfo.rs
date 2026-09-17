@@ -3,6 +3,15 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use sysinfo::{Disks, Networks, Pid, ProcessesToUpdate, System};
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SysinfoCommand {
+
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SysinfoMessage {
+    Snapshot(SnapshotData),
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SnapshotData {
@@ -32,7 +41,7 @@ impl SnapshotData {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct PidV(u32);
+pub struct PidV(pub u32);
 
 impl PidV {
     pub fn to_pid(&self) -> Pid {
