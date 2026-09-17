@@ -5,10 +5,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+use birb_monitor::backend::sysinfo::{ComponentStats, DiskIoStats, NetworkStats, SnapshotData};
 use egui::{WidgetText, mutex::Mutex};
 use serde::{Deserialize, Serialize};
 use sysinfo::{
-    DiskUsage, Disks, Gid, Networks, Pid, ProcessStatus, ProcessesToUpdate, System, Uid,
+    DiskUsage, Disks, Gid, Networks, Pid, ProcessStatus, System, Uid,
 };
 use ustr::Ustr;
 
@@ -244,33 +245,6 @@ impl ProcessSelection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct SnapshotData {
-    pub(super) captured_at: Instant,
-    pub(super) general_stats: GeneralStats,
-    pub(super) cpu_stats: CpuStats,
-    pub(super) network_stats: NetworkStats,
-    pub(super) disk_io_stats: DiskIoStats,
-    pub(super) component_stats: ComponentStats,
-    pub(super) pids: Vec<Pid>,
-}
-
-impl SnapshotData {
-    fn take(sys: &mut System) -> Self {
-        sys.refresh_cpu_all();
-        sys.refresh_processes(ProcessesToUpdate::All, true);
-        Self {
-            captured_at: Instant::now(),
-            general_stats: GeneralStats::take(sys),
-            cpu_stats: CpuStats::take(sys),
-            network_stats: NetworkStats::take_default(),
-            disk_io_stats: DiskIoStats::take_default(),
-            component_stats: ComponentStats::take_default(),
-            pids: sys.processes().keys().copied().collect(),
-        }
-    }
-}
-
 pub struct Snapshot<T> {
     pub time: Instant,
     pub data: T,
@@ -281,133 +255,6 @@ impl<T> Snapshot<T> {
         Self {
             time: Instant::now(),
             data,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct GeneralStats {
-    pub(super) total_memory: u64,
-    pub(super) used_memory: u64,
-    pub(super) total_swap: u64,
-    pub(super) used_swap: u64,
-}
-
-impl GeneralStats {
-    fn take(sys: &mut System) -> Self {
-        sys.refresh_memory();
-        Self {
-            total_memory: sys.total_memory(),
-            used_memory: sys.used_memory(),
-            total_swap: sys.total_swap(),
-            used_swap: sys.used_swap(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub(super) struct ComponentStats {
-    pub(super) components: Vec<ComponentSnapshot>,
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub(super) struct ComponentSnapshot {
-    pub(super) label: String,
-    pub(super) temperature: Option<f32>,
-    pub(super) max: Option<f32>,
-    pub(super) critical: Option<f32>,
-}
-
-impl ComponentStats {
-    fn take(components: &sysinfo::Components) -> Self {
-        Self {
-            components: components
-                .iter()
-                .map(|c| ComponentSnapshot {
-                    label: c.label().to_string(),
-                    temperature: c.temperature(),
-                    max: c.max(),
-                    critical: c.critical(),
-                })
-                .collect(),
-        }
-    }
-
-    fn take_default() -> Self {
-        Self {
-            components: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub(super) struct CpuStats {
-    pub(super) global_usage: f32,
-    pub(super) per_cpu_usage: Vec<f32>,
-}
-
-impl CpuStats {
-    fn take(sys: &System) -> Self {
-        Self {
-            global_usage: sys.global_cpu_usage(),
-            per_cpu_usage: sys.cpus().iter().map(|cpu| cpu.cpu_usage()).collect(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub(super) struct NetworkStats {
-    pub(super) total_received: u64,
-    pub(super) total_transmitted: u64,
-}
-
-impl NetworkStats {
-    fn take(networks: &Networks) -> Self {
-        let mut total_received = 0u64;
-        let mut total_transmitted = 0u64;
-        for (_name, data) in networks.iter() {
-            total_received = total_received.saturating_add(data.total_received());
-            total_transmitted = total_transmitted.saturating_add(data.total_transmitted());
-        }
-        Self {
-            total_received,
-            total_transmitted,
-        }
-    }
-
-    fn take_default() -> Self {
-        Self {
-            total_received: 0,
-            total_transmitted: 0,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub(super) struct DiskIoStats {
-    pub(super) total_read_bytes: u64,
-    pub(super) total_written_bytes: u64,
-}
-
-impl DiskIoStats {
-    fn take(disks: &Disks) -> Self {
-        let mut total_read_bytes = 0u64;
-        let mut total_written_bytes = 0u64;
-        for disk in disks.iter() {
-            let usage = disk.usage();
-            total_read_bytes = total_read_bytes.saturating_add(usage.total_read_bytes);
-            total_written_bytes = total_written_bytes.saturating_add(usage.total_written_bytes);
-        }
-        Self {
-            total_read_bytes,
-            total_written_bytes,
-        }
-    }
-
-    fn take_default() -> Self {
-        Self {
-            total_read_bytes: 0,
-            total_written_bytes: 0,
         }
     }
 }
@@ -545,16 +392,17 @@ fn worker_thread(state: Arc<Mutex<SysinfoSharedState>>) {
         let mut data = state.lock();
 
         // Update process info before pushing snapshot
-        let snapshot_pids: HashSet<Pid> = snapshot.pids.iter().copied().collect();
+        let snapshot_pids: HashSet<Pid> = snapshot.pids.iter().map(|p| p.to_pid()).collect();
 
         let existing_snapshot_count = data.data.len();
         for pid in &snapshot.pids {
-            if let Some(process) = sys.processes().get(pid) {
+            let pid = pid.to_pid();
+            if let Some(process) = sys.processes().get(&pid) {
                 let metrics = ProcessMetrics::from_process(process);
                 let detail = ProcessDetail::from_process(process);
 
                 use std::collections::hash_map::Entry;
-                match data.process_info.entry(*pid) {
+                match data.process_info.entry(pid) {
                     Entry::Occupied(mut e) => {
                         let info = e.get_mut();
                         info.detail = detail;

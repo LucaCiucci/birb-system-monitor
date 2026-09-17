@@ -67,6 +67,7 @@ fn disk_io_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], plot_height: f32,
             let dt = curr
                 .captured_at
                 .duration_since(prev.captured_at)
+                .unwrap()
                 .as_secs_f64()
                 .max(0.001);
             let read_rate = (curr
@@ -84,6 +85,7 @@ fn disk_io_plot(ui: &mut egui::Ui, snapshots: &[SnapshotData], plot_height: f32,
             let seconds_ago = latest
                 .captured_at
                 .duration_since(curr.captured_at)
+                .unwrap()
                 .as_secs_f64();
             ([seconds_ago, read_rate], [seconds_ago, write_rate])
         })
@@ -141,6 +143,7 @@ fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData, min_windo
             latest
                 .captured_at
                 .duration_since(oldest.captured_at)
+                .unwrap()
                 .as_secs_f64()
                 .max(1.0)
         })

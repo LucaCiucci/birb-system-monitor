@@ -209,6 +209,7 @@ fn mini_cpu_plot(
                 let seconds_ago = latest
                     .captured_at
                     .duration_since(snapshot.captured_at)
+                    .unwrap()
                     .as_secs_f64();
                 [
                     seconds_ago,
@@ -281,6 +282,7 @@ fn mini_memory_plot(
                 let seconds_ago = latest
                     .captured_at
                     .duration_since(snapshot.captured_at)
+                    .unwrap()
                     .as_secs_f64();
                 [
                     seconds_ago,
@@ -297,6 +299,7 @@ fn mini_memory_plot(
                 let seconds_ago = latest
                     .captured_at
                     .duration_since(snapshot.captured_at)
+                    .unwrap()
                     .as_secs_f64();
                 [
                     seconds_ago,
@@ -360,6 +363,7 @@ fn mini_network_plot(
                 let dt = curr
                     .captured_at
                     .duration_since(prev.captured_at)
+                    .unwrap()
                     .as_secs_f64()
                     .max(0.001);
                 let rx = (curr
@@ -377,6 +381,7 @@ fn mini_network_plot(
                 let seconds_ago = latest
                     .captured_at
                     .duration_since(curr.captured_at)
+                    .unwrap()
                     .as_secs_f64();
                 ([seconds_ago, rx], [seconds_ago, tx])
             })
@@ -442,6 +447,7 @@ fn mini_disk_io_plot(
                 let dt = curr
                     .captured_at
                     .duration_since(prev.captured_at)
+                    .unwrap()
                     .as_secs_f64()
                     .max(0.001);
                 let read = (curr
@@ -459,6 +465,7 @@ fn mini_disk_io_plot(
                 let seconds_ago = latest
                     .captured_at
                     .duration_since(curr.captured_at)
+                    .unwrap()
                     .as_secs_f64();
                 ([seconds_ago, read], [seconds_ago, write])
             })
@@ -559,6 +566,7 @@ fn mini_temperature_chart(
                             let seconds_ago = latest
                                 .captured_at
                                 .duration_since(snapshot.captured_at)
+                                .unwrap()
                                 .as_secs_f64();
                             let temp = snapshot
                                 .component_stats
@@ -605,6 +613,7 @@ fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData, min_windo
             latest
                 .captured_at
                 .duration_since(oldest.captured_at)
+                .unwrap()
                 .as_secs_f64()
                 .max(1.0)
         })
@@ -653,6 +662,7 @@ fn total_cpu_layer(snapshots: &[SnapshotData], latest: &SnapshotData) -> CpuLaye
         let seconds_ago = latest
             .captured_at
             .duration_since(snapshot.captured_at)
+            .unwrap()
             .as_secs_f64();
 
         layer.xs.push(seconds_ago);
@@ -678,6 +688,7 @@ fn selected_cpu_points(
             let seconds_ago = latest
                 .captured_at
                 .duration_since(snapshot.captured_at)
+                .unwrap()
                 .as_secs_f64();
             let selected_usage = selected_processes
                 .iter()
@@ -707,6 +718,7 @@ fn selected_memory_points(
             let seconds_ago = latest
                 .captured_at
                 .duration_since(snapshot.captured_at)
+                .unwrap()
                 .as_secs_f64();
             let selected_memory = selected_processes
                 .iter()

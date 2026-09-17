@@ -213,13 +213,13 @@ impl MonitorApp {
 
 impl eframe::App for MonitorApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
-        egui::Panel::bottom("footer").show_inside(ui, |ui| {
+        egui::Panel::bottom("footer").show(ui, |ui| {
             ui.centered_and_justified(|ui| {
                 placeholder_sentence(ui);
             });
         });
 
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             self.menu(ui);
             ui.separator();
             ui.horizontal(|ui| {

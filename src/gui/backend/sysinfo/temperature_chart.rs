@@ -213,6 +213,7 @@ fn temperature_plot(
                     let seconds_ago = latest
                         .captured_at
                         .duration_since(snapshot.captured_at)
+                        .unwrap()
                         .as_secs_f64();
                     let temp = snapshot
                         .component_stats
@@ -255,6 +256,7 @@ fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData, min_windo
             latest
                 .captured_at
                 .duration_since(oldest.captured_at)
+                .unwrap()
                 .as_secs_f64()
                 .max(1.0)
         })
