@@ -2,10 +2,16 @@ use super::{BackendId, BackendPanel, BackendPanelId, BackendPanelInfo};
 use birb_monitor::{
     backend::Systems,
     backend::docker::DockerCommand,
+    backend::sysinfo::{PidV, SysinfoCommand},
     message::{Command, Message, SystemId},
 };
 use egui::{Context, mutex::Mutex};
-use std::{collections::HashMap, sync::Arc, thread::JoinHandle, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    thread::JoinHandle,
+    time::Duration,
+};
 
 pub mod docker;
 pub mod sysinfo;
@@ -69,6 +75,7 @@ pub struct LocalConnection {
     commands: tokio::sync::mpsc::Sender<Command>,
     receiver: Option<JoinHandle<()>>,
     sent: HashMap<SystemId, Duration>,
+    selected_processes: Option<HashSet<PidV>>,
     socket: Option<String>,
     pub status: Arc<Mutex<ConnectionStatus>>,
 }
@@ -119,6 +126,7 @@ impl LocalConnection {
             commands,
             receiver: Some(receiver),
             sent: HashMap::new(),
+            selected_processes: None,
             socket: None,
             status,
         };
@@ -130,7 +138,22 @@ impl LocalConnection {
         for group in groups.values() {
             let values = match group {
                 FrontendGroup::Sysinfo(view) => {
-                    let config = view.state.lock().config.clone();
+                    let state = view.state.lock();
+                    let config = state.config.clone();
+                    let selected_processes = state
+                        .selected_pids()
+                        .map(PidV::from)
+                        .collect::<HashSet<_>>();
+                    if self.selected_processes.as_ref() != Some(&selected_processes)
+                        && self
+                            .commands
+                            .try_send(Command::Sysinfo(SysinfoCommand::SetSelectedProcesses(
+                                selected_processes.iter().copied().collect(),
+                            )))
+                            .is_ok()
+                    {
+                        self.selected_processes = Some(selected_processes);
+                    }
                     vec![
                         (SystemId::System, config.update_interval),
                         (SystemId::Components, config.temperature_interval),

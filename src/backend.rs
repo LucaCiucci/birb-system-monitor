@@ -82,6 +82,9 @@ impl Systems {
                                     .send_async(SysinfoCommand::Refresh)
                                     .await
                                     .map_err(|e| e.to_string()),
+                                Command::Sysinfo(
+                                    command @ SysinfoCommand::SetSelectedProcesses(_),
+                                ) => system.send_async(command).await.map_err(|e| e.to_string()),
                                 Command::Refresh(SystemId::Components) => components
                                     .send_async(SysinfoCommand::Refresh)
                                     .await

@@ -199,6 +199,10 @@ impl SysinfoSharedState {
             temperatures: Vec::new(),
         }
     }
+
+    pub(super) fn selected_pids(&self) -> impl Iterator<Item = Pid> + '_ {
+        self.process_selection.selected_processes.iter().copied()
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -308,9 +312,8 @@ impl From<ProcessSnapshot> for ProcessDetail {
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct ProcessInfo {
     pub(super) detail: ProcessDetail,
-    /// History of metrics, length always matches `data.len()` in shared state.
-    /// For processes that existed from the beginning, metrics[i] corresponds to data[i].
-    /// For processes that appeared later, earlier entries are zero-filled.
+    /// Retained metrics for selected processes. Unselected processes keep only their
+    /// latest reading for the process list.
     pub(super) metrics: VecDeque<ProcessMetrics>,
 }
 
@@ -328,6 +331,8 @@ impl SysinfoSharedState {
                 let pids: HashSet<_> = snapshot.pids.iter().map(|p| p.to_pid()).collect();
                 for process in std::mem::take(&mut snapshot.processes) {
                     let pid = process.pid.to_pid();
+                    let retain_history = self.process_selection.selected_processes.is_empty()
+                        || self.process_selection.selected_processes.contains(&pid);
                     let metrics = ProcessMetrics {
                         cpu_usage: process.cpu_usage,
                         memory: process.memory,
@@ -344,10 +349,22 @@ impl SysinfoSharedState {
                     let detail = ProcessDetail::from(process);
                     let info = self.process_info.entry(pid).or_insert_with(|| ProcessInfo {
                         detail: detail.clone(),
-                        metrics: VecDeque::from(vec![ProcessMetrics::default(); count]),
+                        metrics: if retain_history {
+                            VecDeque::from(vec![ProcessMetrics::default(); count])
+                        } else {
+                            VecDeque::new()
+                        },
                     });
                     info.detail = detail;
-                    info.metrics.push_back(metrics);
+                    if retain_history {
+                        if info.metrics.len() <= 1 {
+                            info.metrics = VecDeque::from(vec![ProcessMetrics::default(); count]);
+                        }
+                        info.metrics.push_back(metrics);
+                    } else {
+                        info.metrics.clear();
+                        info.metrics.push_back(metrics);
+                    }
                 }
                 self.process_info.retain(|pid, _| pids.contains(pid));
                 self.process_selection.retain_existing_pids(&pids);
@@ -355,7 +372,9 @@ impl SysinfoSharedState {
                 let excess = self.data.len().saturating_sub(max);
                 self.data.drain(..excess);
                 for info in self.process_info.values_mut() {
-                    info.metrics.drain(..excess);
+                    if info.metrics.len() > 1 {
+                        info.metrics.drain(..excess);
+                    }
                 }
             }
         }
@@ -425,6 +444,24 @@ mod tests {
         assert_eq!(state.temperatures.len(), 2);
         assert_eq!(state.data.len(), 2);
         assert_eq!(state.process_info[&Pid::from_u32(2)].metrics.len(), 2);
+    }
+
+    #[test]
+    fn unselected_processes_keep_only_their_latest_metrics() {
+        let mut state = SysinfoSharedState::new();
+        state.process_selection.select_process(Pid::from_u32(1));
+
+        for _ in 0..2 {
+            let mut snapshot = sample(1, 1);
+            let mut second = snapshot.processes[0].clone();
+            second.pid = PidV(2);
+            snapshot.pids.push(PidV(2));
+            snapshot.processes.push(second);
+            state.receive(SysinfoMessage::Snapshot(snapshot));
+        }
+
+        assert_eq!(state.process_info[&Pid::from_u32(1)].metrics.len(), 2);
+        assert_eq!(state.process_info[&Pid::from_u32(2)].metrics.len(), 1);
     }
 
     #[test]

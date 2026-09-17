@@ -12,13 +12,15 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SysinfoCommand {
     Refresh,
+    SetSelectedProcesses(Vec<PidV>),
 }
 
-/// Owns the live collectors; emits complete samples without retaining history.
+/// Owns the live collectors; emits lightweight samples plus details for selected processes.
 /// Construct with an output channel and pass to `TimedTask::with_handler`.
 pub struct SystemHandler {
     collector: Option<SystemCollector>,
     tx: mpsc::Sender<Message>,
+    selected_processes: Vec<PidV>,
 }
 
 impl SystemHandler {
@@ -26,6 +28,7 @@ impl SystemHandler {
         Self {
             collector: None,
             tx,
+            selected_processes: Vec::new(),
         }
     }
 }
@@ -34,14 +37,19 @@ impl TimedTaskHandler<SysinfoCommand> for SystemHandler {
     async fn handle(&mut self, event: TimedTaskEvent<SysinfoCommand>) {
         match event {
             TimedTaskEvent::Tick | TimedTaskEvent::Message(SysinfoCommand::Refresh) => {}
+            TimedTaskEvent::Message(SysinfoCommand::SetSelectedProcesses(pids)) => {
+                self.selected_processes = pids;
+                return;
+            }
         }
         if self.tx.is_closed() {
             return;
         }
         let collector = self.collector.take();
+        let selected_processes = self.selected_processes.clone();
         let (collector, snapshot) = tokio::task::spawn_blocking(move || {
             let mut collector = collector.unwrap_or_else(SystemCollector::new);
-            let snapshot = collector.sample();
+            let snapshot = collector.sample(&selected_processes);
             (collector, snapshot)
         })
         .await
@@ -80,6 +88,7 @@ impl TimedTaskHandler<SysinfoCommand> for ComponentsHandler {
     async fn handle(&mut self, event: TimedTaskEvent<SysinfoCommand>) {
         match event {
             TimedTaskEvent::Tick | TimedTaskEvent::Message(SysinfoCommand::Refresh) => {}
+            TimedTaskEvent::Message(SysinfoCommand::SetSelectedProcesses(_)) => return,
         }
         if self.tx.is_closed() {
             return;
@@ -124,16 +133,21 @@ struct SystemCollector {
 impl SystemCollector {
     fn new() -> Self {
         Self {
-            sys: System::new_all(),
+            sys: System::new(),
             networks: Networks::new_with_refreshed_list(),
             disks: Disks::new_with_refreshed_list(),
         }
     }
 
-    fn sample(&mut self) -> SnapshotData {
+    fn sample(&mut self, selected_processes: &[PidV]) -> SnapshotData {
         self.networks.refresh(true);
         self.disks.refresh(true);
-        SnapshotData::take(&mut self.sys, &self.networks, &self.disks)
+        SnapshotData::take(
+            &mut self.sys,
+            &self.networks,
+            &self.disks,
+            selected_processes,
+        )
     }
 }
 
@@ -158,14 +172,37 @@ pub struct SnapshotData {
 }
 
 impl SnapshotData {
-    pub fn take(sys: &mut System, networks: &Networks, disks: &Disks) -> Self {
+    pub fn take(
+        sys: &mut System,
+        networks: &Networks,
+        disks: &Disks,
+        selected_processes: &[PidV],
+    ) -> Self {
         sys.refresh_cpu_all();
-        // Include details for processes created after collector initialization.
+        let selected_pids: Vec<Pid> = selected_processes.iter().map(PidV::to_pid).collect();
+        let include_all_details = selected_pids.is_empty();
+        // The process list needs only identity, CPU, and memory for every process.
         sys.refresh_processes_specifics(
             ProcessesToUpdate::All,
             true,
-            ProcessRefreshKind::everything(),
+            ProcessRefreshKind::nothing().with_cpu().with_memory(),
         );
+        // Expensive fields (command line, environment, paths, identities, and disk I/O)
+        // are refreshed only for selected processes. Preserve the legacy behavior when
+        // nothing is selected.
+        if include_all_details {
+            sys.refresh_processes_specifics(
+                ProcessesToUpdate::All,
+                false,
+                ProcessRefreshKind::everything(),
+            );
+        } else if !selected_pids.is_empty() {
+            sys.refresh_processes_specifics(
+                ProcessesToUpdate::Some(&selected_pids),
+                false,
+                ProcessRefreshKind::everything(),
+            );
+        }
         Self {
             captured_at: SystemTime::now(),
             general_stats: GeneralStats::take(sys),
@@ -176,7 +213,12 @@ impl SnapshotData {
             processes: sys
                 .processes()
                 .values()
-                .map(ProcessSnapshot::take)
+                .map(|process| {
+                    ProcessSnapshot::take(
+                        process,
+                        include_all_details || selected_pids.contains(&process.pid()),
+                    )
+                })
                 .collect(),
         }
     }
@@ -224,45 +266,69 @@ pub struct ProcessDiskUsage {
 }
 
 impl ProcessSnapshot {
-    fn take(process: &sysinfo::Process) -> Self {
-        let usage = process.disk_usage();
+    fn take(process: &sysinfo::Process, include_details: bool) -> Self {
+        let usage = include_details.then(|| process.disk_usage());
         Self {
             pid: process.pid().into(),
             parent: process.parent().map(Into::into),
             name: process.name().to_string_lossy().into_owned(),
-            cmd: process
-                .cmd()
-                .iter()
-                .map(|s| s.to_string_lossy().into_owned())
-                .collect(),
-            exe: process.exe().map(|p| p.to_string_lossy().into_owned()),
-            environ: process
-                .environ()
-                .iter()
-                .map(|s| s.to_string_lossy().into_owned())
-                .collect(),
-            cwd: process.cwd().map(|p| p.to_string_lossy().into_owned()),
-            root: process.root().map(|p| p.to_string_lossy().into_owned()),
+            cmd: include_details
+                .then(|| {
+                    process
+                        .cmd()
+                        .iter()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            exe: include_details
+                .then(|| process.exe().map(|p| p.to_string_lossy().into_owned()))
+                .flatten(),
+            environ: include_details
+                .then(|| {
+                    process
+                        .environ()
+                        .iter()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            cwd: include_details
+                .then(|| process.cwd().map(|p| p.to_string_lossy().into_owned()))
+                .flatten(),
+            root: include_details
+                .then(|| process.root().map(|p| p.to_string_lossy().into_owned()))
+                .flatten(),
             cpu_usage: process.cpu_usage(),
             memory: process.memory(),
             virtual_memory: process.virtual_memory(),
             accumulated_cpu_time: Duration::from_millis(process.accumulated_cpu_time()),
             disk_usage: ProcessDiskUsage {
-                total_read_bytes: usage.total_read_bytes,
-                read_bytes: usage.read_bytes,
-                total_written_bytes: usage.total_written_bytes,
-                written_bytes: usage.written_bytes,
+                total_read_bytes: usage.map_or(0, |usage| usage.total_read_bytes),
+                read_bytes: usage.map_or(0, |usage| usage.read_bytes),
+                total_written_bytes: usage.map_or(0, |usage| usage.total_written_bytes),
+                written_bytes: usage.map_or(0, |usage| usage.written_bytes),
             },
             status: process.status().to_string(),
-            user_id: process.user_id().map(|id| (**id).to_string()),
-            effective_user_id: process.effective_user_id().map(|id| (**id).to_string()),
-            group_id: process.group_id().map(|id| id.to_string()),
-            effective_group_id: process.effective_group_id().map(|id| id.to_string()),
+            user_id: include_details
+                .then(|| process.user_id().map(|id| (**id).to_string()))
+                .flatten(),
+            effective_user_id: include_details
+                .then(|| process.effective_user_id().map(|id| (**id).to_string()))
+                .flatten(),
+            group_id: include_details
+                .then(|| process.group_id().map(|id| id.to_string()))
+                .flatten(),
+            effective_group_id: include_details
+                .then(|| process.effective_group_id().map(|id| id.to_string()))
+                .flatten(),
             start_time: process.start_time(),
             run_time: process.run_time(),
             session_id: process.session_id().map(Into::into),
-            open_files: process.open_files(),
-            open_files_limit: process.open_files_limit(),
+            open_files: include_details.then(|| process.open_files()).flatten(),
+            open_files_limit: include_details
+                .then(|| process.open_files_limit())
+                .flatten(),
             thread_kind: process.thread_kind().map(|kind| format!("{kind:?}")),
         }
     }
