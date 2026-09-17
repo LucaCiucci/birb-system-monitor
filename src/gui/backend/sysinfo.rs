@@ -5,12 +5,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use birb_monitor::backend::sysinfo::{ComponentStats, DiskIoStats, NetworkStats, SnapshotData};
+use birb_monitor::backend::sysinfo::{ComponentStats, SnapshotData as SystemSnapshotData};
 use egui::{WidgetText, mutex::Mutex};
 use serde::{Deserialize, Serialize};
-use sysinfo::{
-    DiskUsage, Disks, Gid, Networks, Pid, ProcessStatus, System, Uid,
-};
+use sysinfo::{DiskUsage, Gid, Pid, ProcessStatus, Uid};
 use ustr::Ustr;
 
 use crate::gui::{
@@ -33,6 +31,21 @@ mod selected_process;
 mod settings;
 mod temperature;
 mod temperature_chart;
+
+// Temporary frontend view for the old panels, which still expect combined data.
+// Backend messages now carry system and temperature samples independently.
+pub(super) struct SnapshotData {
+    pub system: SystemSnapshotData,
+    pub component_stats: ComponentStats,
+}
+
+impl std::ops::Deref for SnapshotData {
+    type Target = SystemSnapshotData;
+
+    fn deref(&self) -> &Self::Target {
+        &self.system
+    }
+}
 
 pub struct SysinfoBackend {
     state: Arc<Mutex<SysinfoSharedState>>,
@@ -357,107 +370,12 @@ pub(super) struct ProcessInfo {
 }
 
 fn worker_thread(state: Arc<Mutex<SysinfoSharedState>>) {
-    let mut sys = System::new_all();
-    let mut networks = Networks::new_with_refreshed_list();
-    let mut disks = Disks::new_with_refreshed_list();
-    let mut components = sysinfo::Components::new_with_refreshed_list();
-
-    // Refresh interval for components (not all systems support frequent updates)
-    let mut last_component_refresh = Instant::now();
-
+    // Sampling now lives in the backend sysinfo handlers. The frontend
+    // will consume its messages in a subsequent refactor.
     loop {
-        let (cx, update_interval) = {
-            let data = state.lock();
-            if data.should_stop {
-                return;
-            }
-            (data.cx.clone(), data.config.update_interval)
-        };
-
-        networks.refresh(true);
-        disks.refresh(false);
-
-        // Refresh components less frequently (every ~5s or on first call)
-        let refresh_components = last_component_refresh.elapsed() >= Duration::from_secs(5);
-        if refresh_components {
-            for c in components.iter_mut() {
-                c.refresh();
-            }
-            last_component_refresh = Instant::now();
+        if state.lock().should_stop {
+            return;
         }
-
-        // Build the system-wide snapshot (just PIDs + general stats)
-        let snapshot = SnapshotData::take(&mut sys);
-
-        let mut data = state.lock();
-
-        // Update process info before pushing snapshot
-        let snapshot_pids: HashSet<Pid> = snapshot.pids.iter().map(|p| p.to_pid()).collect();
-
-        let existing_snapshot_count = data.data.len();
-        for pid in &snapshot.pids {
-            let pid = pid.to_pid();
-            if let Some(process) = sys.processes().get(&pid) {
-                let metrics = ProcessMetrics::from_process(process);
-                let detail = ProcessDetail::from_process(process);
-
-                use std::collections::hash_map::Entry;
-                match data.process_info.entry(pid) {
-                    Entry::Occupied(mut e) => {
-                        let info = e.get_mut();
-                        info.detail = detail;
-                        info.metrics.push_back(metrics);
-                    }
-                    Entry::Vacant(e) => {
-                        let mut metrics_deque = VecDeque::new();
-                        // Pad with zeros to match existing snapshot count
-                        for _ in 0..existing_snapshot_count {
-                            metrics_deque.push_back(ProcessMetrics::default());
-                        }
-                        metrics_deque.push_back(metrics);
-                        e.insert(ProcessInfo {
-                            detail,
-                            metrics: metrics_deque,
-                        });
-                    }
-                }
-            }
-        }
-
-        // Remove dead PIDs from process_info
-        data.process_info
-            .retain(|pid, _| snapshot_pids.contains(pid));
-
-        // Push snapshot (after process_info so indices align)
-        data.data.push(snapshot);
-
-        // Also update network/disk/temp data in the latest snapshot
-        if let Some(latest) = data.data.last_mut() {
-            latest.network_stats = NetworkStats::take(&networks);
-            latest.disk_io_stats = DiskIoStats::take(&disks);
-            latest.component_stats = ComponentStats::take(&components);
-        }
-
-        // Trim old data
-        let max_history = data.config.max_history_readings();
-        let excess = data.data.len().saturating_sub(max_history);
-        if excess > 0 {
-            data.data.drain(..excess);
-            for info in data.process_info.values_mut() {
-                info.metrics.drain(..excess);
-            }
-        }
-        drop(data);
-        cx.request_repaint();
-
-        let mut waited = Duration::from_secs(0);
-        while waited < update_interval {
-            let sleep_duration = update_interval.min(Duration::from_millis(100));
-            std::thread::sleep(sleep_duration);
-            waited += sleep_duration;
-            if state.lock().should_stop {
-                return;
-            }
-        }
+        std::thread::sleep(Duration::from_millis(100));
     }
 }
