@@ -1,6 +1,7 @@
 use tokio::runtime::Runtime;
 
 pub mod sysinfo;
+pub mod docker;
 
 pub struct Systems {
     rt: Runtime,

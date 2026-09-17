@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bollard::{API_DEFAULT_VERSION, Docker};
+use birb_monitor::backend::docker::{SimpleContainer, SimpleImage};
 use egui::{WidgetText, mutex::Mutex};
 use serde::{Deserialize, Serialize};
 
@@ -40,25 +40,6 @@ pub(super) struct DockerState {
     pub connected: bool,
     pub error: Option<String>,
     pub last_updated: Option<Instant>,
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct SimpleContainer {
-    pub id: String,
-    pub name: String,
-    pub image: String,
-    pub status: String,
-    pub state: String,
-    pub created: i64,
-    pub ports: String,
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct SimpleImage {
-    pub id: String,
-    pub repo_tags: Vec<String>,
-    pub created: i64,
-    pub size: i64,
 }
 
 pub struct DockerBackend {
@@ -151,137 +132,12 @@ impl DockerSharedState {
 }
 
 fn worker_thread(state: Arc<Mutex<DockerSharedState>>) {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("Failed to build tokio runtime");
-
-    rt.block_on(async move {
-        loop {
-            let (socket_path, update_interval, should_stop) = {
-                let data = state.lock();
-                if data.should_stop {
-                    return;
-                }
-                (
-                    data.config.socket_path.clone(),
-                    data.config.update_interval_secs,
-                    data.should_stop,
-                )
-            };
-
-            if should_stop {
-                return;
-            }
-
-            // Reconnect every cycle (cheap for unix sockets)
-            let docker = Docker::connect_with_socket(&socket_path, 120, API_DEFAULT_VERSION);
-
-            match docker {
-                Ok(docker) => {
-                    let containers = list_containers(&docker).await;
-                    let images = list_images(&docker).await;
-
-                    let mut data = state.lock();
-                    data.state.connected = true;
-                    data.state.error = None;
-                    data.state.last_updated = Some(Instant::now());
-
-                    if let Ok(containers) = containers {
-                        data.state.containers = containers;
-                    } else if let Err(ref e) = containers {
-                        data.state.error = Some(format!("Failed to list containers: {e}"));
-                    }
-
-                    if let Ok(images) = images {
-                        data.state.images = images;
-                    } else if let Err(ref e) = images {
-                        data.state.error = Some(format!("Failed to list images: {e}"));
-                    }
-
-                    // Request repaint
-                    data.cx.request_repaint();
-                }
-                Err(e) => {
-                    let mut data = state.lock();
-                    data.state.connected = false;
-                    data.state.error = Some(format!("Failed to connect: {e}"));
-                    data.cx.request_repaint();
-                }
-            }
-
-            // Sleep for the update interval
-            let sleep_duration = Duration::from_secs(update_interval.max(1));
-            tokio::time::sleep(sleep_duration).await;
+    // Reads now live in backend::docker::DockerHandler. Message consumption
+    // will be wired into the frontend in a subsequent refactor.
+    loop {
+        if state.lock().should_stop {
+            return;
         }
-    });
-}
-
-async fn list_containers(docker: &Docker) -> anyhow::Result<Vec<SimpleContainer>> {
-    use bollard::query_parameters::ListContainersOptionsBuilder;
-
-    let options = ListContainersOptionsBuilder::default().all(true).build();
-
-    let containers = docker.list_containers(Some(options)).await?;
-
-    Ok(containers
-        .into_iter()
-        .map(|c| {
-            let names = c.names.unwrap_or_default();
-            let name = names
-                .first()
-                .cloned()
-                .unwrap_or_default()
-                .trim_start_matches('/')
-                .to_string();
-
-            let ports_str = c
-                .ports
-                .unwrap_or_default()
-                .iter()
-                .map(|p| {
-                    let typ = p.typ.map(|t| t.to_string()).unwrap_or_else(|| "tcp".into());
-                    match p.public_port {
-                        Some(pub_port) => format!(
-                            "{}:{}->{}/{}",
-                            p.ip.as_deref().unwrap_or("0.0.0.0"),
-                            pub_port,
-                            p.private_port,
-                            typ
-                        ),
-                        None => format!("{}/{}", p.private_port, typ),
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            SimpleContainer {
-                id: c.id.unwrap_or_default().to_string(),
-                name,
-                image: c.image.unwrap_or_default(),
-                status: c.status.unwrap_or_default(),
-                state: c.state.map(|s| s.to_string()).unwrap_or_default(),
-                created: c.created.unwrap_or(0),
-                ports: ports_str,
-            }
-        })
-        .collect())
-}
-
-async fn list_images(docker: &Docker) -> anyhow::Result<Vec<SimpleImage>> {
-    use bollard::query_parameters::ListImagesOptionsBuilder;
-
-    let options = ListImagesOptionsBuilder::default().all(true).build();
-
-    let images = docker.list_images(Some(options)).await?;
-
-    Ok(images
-        .into_iter()
-        .map(|i| SimpleImage {
-            id: i.id,
-            repo_tags: i.repo_tags,
-            created: i.created,
-            size: i.size,
-        })
-        .collect())
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
