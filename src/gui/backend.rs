@@ -4,13 +4,11 @@ use egui::Context;
 
 use super::{BackendOLD, BackendId};
 
-pub mod debug;
 pub mod docker;
 pub mod sysinfo;
 
 pub fn init_all_backends(cx: &Context) -> HashMap<BackendId, Box<dyn BackendOLD>> {
     let mut backends: HashMap<BackendId, Box<dyn BackendOLD>> = HashMap::new();
-    backends.insert(BackendId("debug".into()), Box::new(debug::DebugBackend));
     backends.insert(
         BackendId("sysinfo".into()),
         Box::new(sysinfo::SysinfoBackend::new(cx.clone())),
