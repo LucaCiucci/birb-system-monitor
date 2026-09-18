@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sysinfo::Pid;
 
 use crate::gui::{
-    BackendPanel,
+    Panel,
     backend::sysinfo::{ProcessDetail, ProcessMetrics, SysinfoSharedState},
 };
 
@@ -35,7 +35,7 @@ impl SelectedProcessPanel {
     }
 }
 
-impl BackendPanel for SelectedProcessPanel {
+impl Panel for SelectedProcessPanel {
     fn title(&mut self) -> WidgetText {
         "Selected Process".into()
     }

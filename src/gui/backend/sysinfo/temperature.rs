@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use egui::{Color32, Grid, ProgressBar, WidgetText, mutex::Mutex};
 
-use crate::gui::{BackendPanel, backend::sysinfo::SysinfoSharedState};
+use crate::gui::{Panel, backend::sysinfo::SysinfoSharedState};
 
 pub(super) struct TemperaturePanel {
     state: Arc<Mutex<SysinfoSharedState>>,
@@ -14,7 +14,7 @@ impl TemperaturePanel {
     }
 }
 
-impl BackendPanel for TemperaturePanel {
+impl Panel for TemperaturePanel {
     fn title(&mut self) -> WidgetText {
         "Temperatures".into()
     }

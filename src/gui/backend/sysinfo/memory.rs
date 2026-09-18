@@ -6,7 +6,7 @@ use human_units::FormatSize;
 use sysinfo::Pid;
 
 use crate::gui::{
-    BackendPanel,
+    Panel,
     backend::sysinfo::{ProcessInfo, SnapshotData, SysinfoSharedState},
 };
 
@@ -24,7 +24,7 @@ impl MemoryPanel {
     }
 }
 
-impl BackendPanel for MemoryPanel {
+impl Panel for MemoryPanel {
     fn title(&mut self) -> WidgetText {
         "Memory".into()
     }

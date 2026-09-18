@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use egui::{Checkbox, Grid, WidgetText, mutex::Mutex};
 
 use crate::gui::{
-    BackendPanel,
+    Panel,
     backend::sysinfo::{SysinfoConfig, SysinfoSharedState},
 };
 
@@ -17,7 +17,7 @@ impl SettingsPanel {
     }
 }
 
-impl BackendPanel for SettingsPanel {
+impl Panel for SettingsPanel {
     fn title(&mut self) -> WidgetText {
         "Sysinfo Settings".into()
     }

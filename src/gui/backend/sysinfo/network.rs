@@ -5,7 +5,7 @@ use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
 use human_units::FormatSize;
 
 use crate::gui::{
-    BackendPanel,
+    Panel,
     backend::sysinfo::{SnapshotData, SysinfoSharedState},
 };
 
@@ -21,7 +21,7 @@ impl NetworkPanel {
     }
 }
 
-impl BackendPanel for NetworkPanel {
+impl Panel for NetworkPanel {
     fn title(&mut self) -> WidgetText {
         "Network".into()
     }

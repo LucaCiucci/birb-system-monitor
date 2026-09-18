@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use egui::{Color32, Grid, Ui, WidgetText, mutex::Mutex};
 
-use crate::gui::{BackendPanel, backend::docker::DockerSharedState};
+use crate::gui::{Panel, backend::docker::DockerSharedState};
 
 pub struct ImagesPanel {
     state: Arc<Mutex<DockerSharedState>>,
@@ -33,7 +33,7 @@ fn format_size(bytes: i64) -> String {
     format!("{:.1} {}", val, UNITS[unit_idx])
 }
 
-impl BackendPanel for ImagesPanel {
+impl Panel for ImagesPanel {
     fn title(&mut self) -> WidgetText {
         "Images".into()
     }

@@ -5,7 +5,7 @@ use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
 use human_units::FormatSize;
 
 use crate::gui::{
-    BackendPanel,
+    Panel,
     backend::sysinfo::{SnapshotData, SysinfoSharedState},
 };
 
@@ -21,7 +21,7 @@ impl DiskIoPanel {
     }
 }
 
-impl BackendPanel for DiskIoPanel {
+impl Panel for DiskIoPanel {
     fn title(&mut self) -> WidgetText {
         "Disk I/O".into()
     }

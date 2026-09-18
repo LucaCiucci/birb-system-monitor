@@ -6,57 +6,34 @@ use ordered_hash_map::OrderedHashMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{BackendId, BackendPanelId, tabs::Tab};
+use crate::gui::{backend::FrontendConfig, panels::PanelId, tabs::Tab};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     pub dock_states: OrderedHashMap<String, DockState<Tab>>,
-    pub backend_config: BTreeMap<BackendId, serde_json::Value>,
-    pub panel_config:
-        BTreeMap<BackendId, BTreeMap<BackendPanelId, BTreeMap<String, serde_json::Value>>>,
+    pub frontend_config: FrontendConfig,
+    pub panel_config: BTreeMap<PanelId, BTreeMap<String, serde_json::Value>>,
 }
 
 impl Profile {
     pub fn new(dock_states: OrderedHashMap<String, DockState<Tab>>) -> Self {
         Self {
             dock_states,
-            backend_config: Default::default(),
+            frontend_config: Default::default(),
             panel_config: Default::default(),
         }
     }
 
-    pub fn set_backend_config(&mut self, backend_id: &BackendId, config: serde_json::Value) {
-        self.backend_config.insert(backend_id.clone(), config);
-    }
-
-    pub fn get_backend_config(&self, backend_id: &BackendId) -> Option<&serde_json::Value> {
-        self.backend_config.get(backend_id)
-    }
-
-    pub fn set_panel_config(
-        &mut self,
-        backend_id: &BackendId,
-        panel_id: &BackendPanelId,
-        uuid: &Uuid,
-        config: serde_json::Value,
-    ) {
+    pub fn set_panel_config(&mut self, panel_id: &PanelId, uuid: &Uuid, config: serde_json::Value) {
         self.panel_config
-            .entry(backend_id.clone())
-            .or_default()
             .entry(panel_id.clone())
             .or_default()
             .insert(uuid.to_string(), config);
     }
 
-    pub fn get_panel_config(
-        &self,
-        backend_id: &BackendId,
-        panel_id: &BackendPanelId,
-        uuid: &Uuid,
-    ) -> Option<&serde_json::Value> {
+    pub fn get_panel_config(&self, panel_id: &PanelId, uuid: &Uuid) -> Option<&serde_json::Value> {
         self.panel_config
-            .get(backend_id)
-            .and_then(|panels| panels.get(panel_id))
+            .get(panel_id)
             .and_then(|configs| configs.get(&uuid.to_string()))
     }
 

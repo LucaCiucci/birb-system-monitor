@@ -13,7 +13,7 @@ use sysinfo::Pid;
 use std::collections::{HashMap, HashSet};
 
 use crate::gui::{
-    BackendPanel,
+    Panel,
     backend::sysinfo::{ProcessInfo, SysinfoSharedState},
 };
 
@@ -85,7 +85,7 @@ impl ProcessesPanel {
     }
 }
 
-impl BackendPanel for ProcessesPanel {
+impl Panel for ProcessesPanel {
     fn title(&mut self) -> WidgetText {
         "Processes".into()
     }

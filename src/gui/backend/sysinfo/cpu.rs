@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sysinfo::Pid;
 
 use crate::gui::{
-    BackendPanel,
+    Panel,
     backend::sysinfo::{ProcessInfo, SnapshotData, SysinfoSharedState},
 };
 
@@ -39,7 +39,7 @@ impl CpuPanel {
     }
 }
 
-impl BackendPanel for CpuPanel {
+impl Panel for CpuPanel {
     fn title(&mut self) -> WidgetText {
         "CPU".into()
     }

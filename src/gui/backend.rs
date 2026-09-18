@@ -1,4 +1,4 @@
-use super::{BackendId, BackendPanel, BackendPanelId, BackendPanelInfo};
+use super::{Panel, panels::PanelId};
 use crate::{
     backend::Systems,
     backend::docker::DockerCommand,
@@ -16,56 +16,54 @@ use std::{
 pub mod docker;
 pub mod sysinfo;
 
-/// Frontend-only panel factories and data stores. No collector lives here.
-pub enum FrontendGroup {
-    Sysinfo(sysinfo::SysinfoFrontend),
-    Docker(docker::DockerFrontend),
+/// Display data and preferences for both domains; collectors live in Systems.
+pub struct FrontendState {
+    pub sysinfo: sysinfo::SysinfoFrontend,
+    pub docker: docker::DockerFrontend,
 }
 
-impl FrontendGroup {
-    pub fn name(&self) -> egui::WidgetText {
-        match self {
-            Self::Sysinfo(v) => v.name(),
-            Self::Docker(v) => v.name(),
-        }
-    }
-    pub fn panels(&self) -> Vec<BackendPanelInfo> {
-        match self {
-            Self::Sysinfo(v) => v.panels(),
-            Self::Docker(v) => v.panels(),
-        }
-    }
-    pub fn new_panel(&self, id: &BackendPanelId) -> Box<dyn BackendPanel> {
-        match self {
-            Self::Sysinfo(v) => v.new_panel(id),
-            Self::Docker(v) => v.new_panel(id),
-        }
-    }
-    pub fn save_config(&self) -> anyhow::Result<serde_json::Value> {
-        match self {
-            Self::Sysinfo(v) => v.save_config(),
-            Self::Docker(v) => v.save_config(),
-        }
-    }
-    pub fn load_config(&mut self, config: &serde_json::Value) -> anyhow::Result<()> {
-        match self {
-            Self::Sysinfo(v) => v.load_config(config),
-            Self::Docker(v) => v.load_config(config),
-        }
-    }
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct FrontendConfig {
+    pub sysinfo: sysinfo::SysinfoConfig,
+    pub docker: docker::DockerConfig,
 }
 
-pub fn init_frontend_groups(_: &Context) -> HashMap<BackendId, FrontendGroup> {
-    HashMap::from([
-        (
-            BackendId("sysinfo".into()),
-            FrontendGroup::Sysinfo(sysinfo::SysinfoFrontend::new()),
-        ),
-        (
-            BackendId("docker".into()),
-            FrontendGroup::Docker(docker::DockerFrontend::new()),
-        ),
-    ])
+impl FrontendState {
+    pub fn new() -> Self {
+        Self {
+            sysinfo: sysinfo::SysinfoFrontend::new(),
+            docker: docker::DockerFrontend::new(),
+        }
+    }
+
+    pub fn config(&self) -> FrontendConfig {
+        FrontendConfig {
+            sysinfo: self.sysinfo.state.lock().config.clone(),
+            docker: self.docker.state.lock().config.clone(),
+        }
+    }
+
+    pub fn apply_config(&self, config: &FrontendConfig) {
+        self.sysinfo.state.lock().config = config.sysinfo.clone();
+        self.docker.state.lock().config = config.docker.clone();
+    }
+
+    pub fn new_panel(&self, id: &PanelId) -> Box<dyn Panel> {
+        match id {
+            PanelId::Containers | PanelId::Images => self.docker.new_panel(id),
+            PanelId::Cpu
+            | PanelId::Memory
+            | PanelId::Processes
+            | PanelId::SelectedProcess
+            | PanelId::Network
+            | PanelId::DiskIo
+            | PanelId::Dashboard
+            | PanelId::Settings
+            | PanelId::Temperature
+            | PanelId::TemperatureChart => self.sysinfo.new_panel(id),
+        }
+    }
 }
 
 /// Frontend adapter: receives backend messages, maintains display data, and
@@ -103,13 +101,13 @@ impl Transport {
 
 impl Connection {
     #[cfg(test)]
-    pub fn new(cx: Context, groups: &HashMap<BackendId, FrontendGroup>) -> Self {
-        Self::connect(cx, groups, None, "birb-monitor").expect("Failed to start backend")
+    pub fn new(cx: Context, frontend: &FrontendState) -> Self {
+        Self::connect(cx, frontend, None, "birb-monitor").expect("Failed to start backend")
     }
 
     pub fn connect(
         cx: Context,
-        groups: &HashMap<BackendId, FrontendGroup>,
+        frontend: &FrontendState,
         host: Option<&str>,
         ssh_bin: &str,
     ) -> anyhow::Result<Self> {
@@ -123,14 +121,8 @@ impl Connection {
                 (Transport::Local(systems), commands, messages)
             }
         };
-        let sysinfo = match &groups[&BackendId("sysinfo".into())] {
-            FrontendGroup::Sysinfo(view) => view.state.clone(),
-            _ => unreachable!(),
-        };
-        let docker = match &groups[&BackendId("docker".into())] {
-            FrontendGroup::Docker(view) => view.state.clone(),
-            _ => unreachable!(),
-        };
+        let sysinfo = frontend.sysinfo.state.clone();
+        let docker = frontend.docker.state.clone();
         let status = Arc::new(Mutex::new(ConnectionStatus::default()));
         let received_status = status.clone();
         let receiver = std::thread::spawn(move || {
@@ -166,72 +158,64 @@ impl Connection {
             socket: None,
             status,
         };
-        result.sync_config(groups);
+        result.sync_config(frontend);
         Ok(result)
     }
 
-    pub fn sync_config(&mut self, groups: &HashMap<BackendId, FrontendGroup>) {
+    pub fn sync_config(&mut self, frontend: &FrontendState) {
         if self.status.lock().disconnected {
             return;
         }
-        for group in groups.values() {
-            let values = match group {
-                FrontendGroup::Sysinfo(view) => {
-                    let state = view.state.lock();
-                    let config = state.config.clone();
-                    let selected_processes = state
-                        .selected_pids()
-                        .map(PidV::from)
-                        .collect::<HashSet<_>>();
-                    let detail_selection =
-                        (selected_processes, config.limit_processes_to_selection);
-                    if self.process_detail_selection.as_ref() != Some(&detail_selection)
-                        && self
-                            .commands
-                            .try_send(Command::Sysinfo(
-                                SysinfoCommand::SetProcessDetailSelection {
-                                    pids: detail_selection.0.iter().copied().collect(),
-                                    selected_only: detail_selection.1,
-                                },
-                            ))
-                            .is_ok()
-                    {
-                        self.process_detail_selection = Some(detail_selection);
-                    }
-                    vec![
-                        (SystemId::System, config.update_interval),
-                        (SystemId::Components, config.temperature_interval),
-                    ]
-                }
-                FrontendGroup::Docker(view) => {
-                    let config = view.state.lock().config.clone();
-                    if self.socket.as_ref() != Some(&config.socket_path) {
-                        if self
-                            .commands
-                            .try_send(Command::Docker(DockerCommand::SetSocketPath(
-                                config.socket_path.clone(),
-                            )))
-                            .is_ok()
-                        {
-                            self.socket = Some(config.socket_path);
-                        }
-                    }
-                    vec![(
-                        SystemId::Docker,
-                        Duration::from_secs(config.update_interval_secs),
-                    )]
-                }
-            };
-            for (target, interval) in values {
-                if self.sent.get(&target) != Some(&interval) {
-                    if self
-                        .commands
-                        .try_send(Command::SetInterval { target, interval })
-                        .is_ok()
-                    {
-                        self.sent.insert(target, interval);
-                    }
-                }
+        let (config, selected_processes) = {
+            let state = frontend.sysinfo.state.lock();
+            (
+                state.config.clone(),
+                state
+                    .selected_pids()
+                    .map(PidV::from)
+                    .collect::<HashSet<_>>(),
+            )
+        };
+        let detail_selection = (selected_processes, config.limit_processes_to_selection);
+        if self.process_detail_selection.as_ref() != Some(&detail_selection)
+            && self
+                .commands
+                .try_send(Command::Sysinfo(
+                    SysinfoCommand::SetProcessDetailSelection {
+                        pids: detail_selection.0.iter().copied().collect(),
+                        selected_only: detail_selection.1,
+                    },
+                ))
+                .is_ok()
+        {
+            self.process_detail_selection = Some(detail_selection);
+        }
+        let docker = frontend.docker.state.lock().config.clone();
+        if self.socket.as_ref() != Some(&docker.socket_path)
+            && self
+                .commands
+                .try_send(Command::Docker(DockerCommand::SetSocketPath(
+                    docker.socket_path.clone(),
+                )))
+                .is_ok()
+        {
+            self.socket = Some(docker.socket_path);
+        }
+        for (target, interval) in [
+            (SystemId::System, config.update_interval),
+            (SystemId::Components, config.temperature_interval),
+            (
+                SystemId::Docker,
+                Duration::from_secs(docker.update_interval_secs),
+            ),
+        ] {
+            if self.sent.get(&target) != Some(&interval)
+                && self
+                    .commands
+                    .try_send(Command::SetInterval { target, interval })
+                    .is_ok()
+            {
+                self.sent.insert(target, interval);
             }
         }
     }

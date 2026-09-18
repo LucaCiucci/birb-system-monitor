@@ -8,7 +8,7 @@ use human_units::FormatSize;
 use sysinfo::Pid;
 
 use crate::gui::{
-    BackendPanel,
+    Panel,
     backend::sysinfo::{ProcessInfo, SnapshotData, SysinfoSharedState},
 };
 
@@ -26,7 +26,7 @@ impl DashboardPanel {
     }
 }
 
-impl BackendPanel for DashboardPanel {
+impl Panel for DashboardPanel {
     fn title(&mut self) -> WidgetText {
         "Dashboard".into()
     }

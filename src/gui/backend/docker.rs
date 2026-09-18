@@ -5,8 +5,9 @@ use egui::{WidgetText, mutex::Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::gui::{
-    BackendPanel, BackendPanelId, BackendPanelInfo,
+    Panel, PanelInfo,
     backend::docker::{containers::ContainersPanel, images::ImagesPanel},
+    panels::PanelId,
 };
 
 mod containers;
@@ -56,35 +57,26 @@ impl DockerFrontend {
         "Docker".into()
     }
 
-    pub fn save_config(&self) -> anyhow::Result<serde_json::Value> {
-        Ok(serde_json::to_value(&self.state.lock().config)?)
-    }
-
-    pub fn load_config(&mut self, config: &serde_json::Value) -> anyhow::Result<()> {
-        self.state.lock().config = serde_json::from_value(config.clone())?;
-        Ok(())
-    }
-
-    pub fn panels(&self) -> Vec<BackendPanelInfo> {
+    pub fn panels(&self) -> Vec<PanelInfo> {
         vec![
-            BackendPanelInfo {
-                id: BackendPanelId("containers".into()),
+            PanelInfo {
+                id: PanelId::Containers,
                 title: "Containers".into(),
                 description: "Lists running containers".into(),
             },
-            BackendPanelInfo {
-                id: BackendPanelId("images".into()),
+            PanelInfo {
+                id: PanelId::Images,
                 title: "Images".into(),
                 description: "Lists docker images".into(),
             },
         ]
     }
 
-    pub fn new_panel(&self, panel_id: &BackendPanelId) -> Box<dyn BackendPanel> {
-        match panel_id.0.as_str() {
-            "containers" => Box::new(ContainersPanel::new(self.state.clone())),
-            "images" => Box::new(ImagesPanel::new(self.state.clone())),
-            _ => panic!("Unknown panel id: {}", panel_id.0),
+    pub fn new_panel(&self, panel_id: &PanelId) -> Box<dyn Panel> {
+        match panel_id {
+            PanelId::Containers => Box::new(ContainersPanel::new(self.state.clone())),
+            PanelId::Images => Box::new(ImagesPanel::new(self.state.clone())),
+            _ => panic!("Unknown panel id: {}", panel_id),
         }
     }
 }

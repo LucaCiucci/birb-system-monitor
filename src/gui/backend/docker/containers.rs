@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use egui::{Color32, Grid, Ui, WidgetText, mutex::Mutex};
 
-use crate::gui::{BackendPanel, backend::docker::DockerSharedState};
+use crate::gui::{Panel, backend::docker::DockerSharedState};
 
 pub struct ContainersPanel {
     state: Arc<Mutex<DockerSharedState>>,
@@ -18,7 +18,7 @@ impl ContainersPanel {
     }
 }
 
-impl BackendPanel for ContainersPanel {
+impl Panel for ContainersPanel {
     fn title(&mut self) -> WidgetText {
         "Containers".into()
     }

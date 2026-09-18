@@ -1,8 +1,10 @@
 use std::{collections::HashMap, time::Duration};
 
+use crate::gui::panels::PanelId;
+
 use super::{
-    BackendId, BackendPanel, PanelId,
-    backend::{Connection, FrontendGroup, init_frontend_groups},
+    Panel,
+    backend::{Connection, FrontendState},
     save::Profile,
     tabs::{Tab, default_dock_state},
     widgets::placeholder_sentence,
@@ -44,8 +46,8 @@ struct MonitorApp {
     connection_error: Option<String>,
     connection: Option<Connection>,
     loaded_profile: Option<Profile>,
-    groups: HashMap<BackendId, FrontendGroup>,
-    panels: HashMap<(PanelId, Uuid), Box<dyn BackendPanel>>,
+    frontend: FrontendState,
+    panels: HashMap<(PanelId, Uuid), Box<dyn Panel>>,
     dock_states: OrderedHashMap<String, egui_dock::DockState<Tab>>,
     selected_tab: String,
 }
@@ -54,8 +56,13 @@ impl MonitorApp {
     fn reset(&mut self, cx: &egui::Context) {
         self.connection.take();
         self.loaded_profile = None;
-        self.groups = init_frontend_groups(cx);
-        match Connection::connect(cx.clone(), &self.groups, self.ssh.as_deref(), &self.ssh_bin) {
+        self.frontend = FrontendState::new();
+        match Connection::connect(
+            cx.clone(),
+            &self.frontend,
+            self.ssh.as_deref(),
+            &self.ssh_bin,
+        ) {
             Ok(connection) => {
                 self.connection = Some(connection);
                 self.connection_error = None;
@@ -90,43 +97,34 @@ impl MonitorApp {
             .map(|p| p.dock_states.clone())
             .unwrap_or_default();
 
-        let mut groups = init_frontend_groups(&_cc.egui_ctx);
-
-        for (id, backend) in &mut groups {
-            if let Some(config) = loaded_profile
-                .as_ref()
-                .and_then(|p| p.get_backend_config(id))
-            {
-                if let Err(e) = backend.load_config(config) {
-                    eprintln!("Failed to load config for backend {}: {:?}", id, e);
-                }
-            }
+        let frontend = FrontendState::new();
+        if let Some(profile) = &loaded_profile {
+            frontend.apply_config(&profile.frontend_config);
         }
 
         // Eagerly create all panels from saved dock layout so configs are loaded
         // even for panels in tabs that haven't been viewed yet.
-        let mut panels: HashMap<(PanelId, Uuid), Box<dyn BackendPanel>> = HashMap::new();
+        let mut panels: HashMap<(PanelId, Uuid), Box<dyn Panel>> = HashMap::new();
         for dock_state in dock_states.values() {
             for (_path, tab) in dock_state.iter_all_tabs() {
                 if let Tab::Panel(panel_id, uuid) = tab {
-                    if let Some(backend) = groups.get(&panel_id.backend()) {
-                        let mut panel = backend.new_panel(&panel_id.panel());
-                        if let Some(config) = loaded_profile.as_ref().and_then(|p| {
-                            p.get_panel_config(&panel_id.backend(), &panel_id.panel(), uuid)
-                        }) {
-                            if let Err(e) = panel.load_config(config) {
-                                eprintln!("Failed to load config for panel {}: {:?}", panel_id, e);
-                            }
+                    let mut panel = frontend.new_panel(panel_id);
+                    if let Some(config) = loaded_profile
+                        .as_ref()
+                        .and_then(|p| p.get_panel_config(panel_id, uuid))
+                    {
+                        if let Err(e) = panel.load_config(config) {
+                            eprintln!("Failed to load config for panel {}: {:?}", panel_id, e);
                         }
-                        panels.insert((panel_id.clone(), *uuid), panel);
                     }
+                    panels.insert((*panel_id, *uuid), panel);
                 }
             }
         }
 
         let connection = Some(Connection::connect(
             _cc.egui_ctx.clone(),
-            &groups,
+            &frontend,
             ssh.as_deref(),
             &ssh_bin,
         )?);
@@ -136,7 +134,7 @@ impl MonitorApp {
             connection_error: None,
             connection,
             loaded_profile,
-            groups,
+            frontend,
             panels,
             dock_states,
             selected_tab: "main".into(),
@@ -176,15 +174,17 @@ impl MonitorApp {
             });
 
             ui.menu_button("panels", |ui| {
-                for (id, backend) in &mut self.groups {
-                    ui.menu_button(backend.name(), |ui| {
-                        for panel in backend.panels() {
+                for (name, panels) in [
+                    (self.frontend.sysinfo.name(), self.frontend.sysinfo.panels()),
+                    (self.frontend.docker.name(), self.frontend.docker.panels()),
+                ] {
+                    ui.menu_button(name, |ui| {
+                        for panel in panels {
                             if ui.button(panel.title.as_str()).clicked() {
-                                let panel_id = PanelId::new(id.clone(), panel.id.clone());
                                 self.dock_states
                                     .entry(self.selected_tab.clone())
                                     .or_insert_with(default_dock_state)
-                                    .push_to_focused_leaf(Tab::Panel(panel_id, Uuid::new_v4()));
+                                    .push_to_focused_leaf(Tab::Panel(panel.id, Uuid::new_v4()));
                             }
                         }
                     });
@@ -203,7 +203,7 @@ impl eframe::App for MonitorApp {
             ui.colored_label(Color32::RED, error);
         }
         if let Some(connection) = &mut self.connection {
-            connection.sync_config(&self.groups);
+            connection.sync_config(&self.frontend);
             let status = connection.status.lock();
             if status.disconnected {
                 ui.colored_label(
@@ -287,7 +287,7 @@ impl eframe::App for MonitorApp {
             .style(egui_dock::Style::from_egui(ui.style().as_ref()))
             .show_inside(
                 ui,
-                &mut MyTabViewer::new(&self.loaded_profile, &self.groups, &mut self.panels),
+                &mut MyTabViewer::new(&self.loaded_profile, &self.frontend, &mut self.panels),
             );
         });
     }
@@ -299,15 +299,11 @@ impl eframe::App for MonitorApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         let mut profile = Profile::new(self.dock_states.clone());
 
-        for (id, backend) in &self.groups {
-            if let Ok(config) = backend.save_config() {
-                profile.set_backend_config(id, config);
-            }
-        }
+        profile.frontend_config = self.frontend.config();
 
         for ((panel_id, uuid), panel) in &self.panels {
             if let Ok(config) = panel.save_config() {
-                profile.set_panel_config(&panel_id.backend(), &panel_id.panel(), uuid, config);
+                profile.set_panel_config(panel_id, uuid, config);
             }
         }
 
@@ -329,37 +325,33 @@ impl eframe::App for MonitorApp {
 
 struct MyTabViewer<'a> {
     loaded_profile: &'a Option<Profile>,
-    groups: &'a HashMap<BackendId, FrontendGroup>,
-    panels: &'a mut HashMap<(PanelId, Uuid), Box<dyn BackendPanel>>,
+    frontend: &'a FrontendState,
+    panels: &'a mut HashMap<(PanelId, Uuid), Box<dyn Panel>>,
 }
 
 impl<'a> MyTabViewer<'a> {
     fn new(
         loaded_profile: &'a Option<Profile>,
-        groups: &'a HashMap<BackendId, FrontendGroup>,
-        panels: &'a mut HashMap<(PanelId, Uuid), Box<dyn BackendPanel>>,
+        frontend: &'a FrontendState,
+        panels: &'a mut HashMap<(PanelId, Uuid), Box<dyn Panel>>,
     ) -> Self {
         Self {
             loaded_profile,
-            groups,
+            frontend,
             panels,
         }
     }
 
-    fn get_panel(&mut self, panel_id: &PanelId, uuid: &Uuid) -> &mut dyn BackendPanel {
+    fn get_panel(&mut self, panel_id: &PanelId, uuid: &Uuid) -> &mut dyn Panel {
         self.panels
             .entry((panel_id.clone(), *uuid))
             .or_insert_with(|| {
-                let backend = self
-                    .groups
-                    .get(&panel_id.backend())
-                    .expect("Backend not found");
-                let mut panel = backend.new_panel(&panel_id.panel());
+                let mut panel = self.frontend.new_panel(panel_id);
 
                 let config = self
                     .loaded_profile
                     .as_ref()
-                    .and_then(|p| p.get_panel_config(&panel_id.backend(), &panel_id.panel(), uuid));
+                    .and_then(|p| p.get_panel_config(panel_id, uuid));
 
                 if let Some(config) = config {
                     if let Err(e) = panel.load_config(config) {

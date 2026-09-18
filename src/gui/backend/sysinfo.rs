@@ -14,13 +14,14 @@ use sysinfo::Pid;
 use ustr::Ustr;
 
 use crate::gui::{
-    BackendPanel, BackendPanelId, BackendPanelInfo,
+    Panel, PanelInfo,
     backend::sysinfo::{
         cpu::CpuPanel, dashboard::DashboardPanel, disk_io::DiskIoPanel, memory::MemoryPanel,
         network::NetworkPanel, proc_list::ProcessesPanel, selected_process::SelectedProcessPanel,
         settings::SettingsPanel, temperature::TemperaturePanel,
         temperature_chart::TemperatureChartPanel,
     },
+    panels::PanelId,
 };
 
 mod cpu;
@@ -51,83 +52,74 @@ impl SysinfoFrontend {
         "Sysinfo".into()
     }
 
-    pub fn save_config(&self) -> anyhow::Result<serde_json::Value> {
-        Ok(serde_json::to_value(&self.state.lock().config)?)
-    }
-
-    pub fn load_config(&mut self, config: &serde_json::Value) -> anyhow::Result<()> {
-        self.state.lock().config = serde_json::from_value(config.clone())?;
-        Ok(())
-    }
-
-    pub fn panels(&self) -> Vec<BackendPanelInfo> {
+    pub fn panels(&self) -> Vec<PanelInfo> {
         vec![
-            BackendPanelInfo {
-                id: BackendPanelId("cpu".into()),
+            PanelInfo {
+                id: PanelId::Cpu,
                 title: "CPU".into(),
                 description: "Shows CPU usage".into(),
             },
-            BackendPanelInfo {
-                id: BackendPanelId("memory".into()),
+            PanelInfo {
+                id: PanelId::Memory,
                 title: "Memory".into(),
                 description: "Shows memory usage".into(),
             },
-            BackendPanelInfo {
-                id: BackendPanelId("processes".into()),
+            PanelInfo {
+                id: PanelId::Processes,
                 title: "Processes".into(),
                 description: "Shows process information".into(),
             },
-            BackendPanelInfo {
-                id: BackendPanelId("selected-process".into()),
+            PanelInfo {
+                id: PanelId::SelectedProcess,
                 title: "Selected Process".into(),
                 description: "Shows details for a selected process".into(),
             },
-            BackendPanelInfo {
-                id: BackendPanelId("network".into()),
+            PanelInfo {
+                id: PanelId::Network,
                 title: "Network".into(),
                 description: "Shows network I/O usage".into(),
             },
-            BackendPanelInfo {
-                id: BackendPanelId("disk-io".into()),
+            PanelInfo {
+                id: PanelId::DiskIo,
                 title: "Disk I/O".into(),
                 description: "Shows disk I/O usage".into(),
             },
-            BackendPanelInfo {
-                id: BackendPanelId("dashboard".into()),
+            PanelInfo {
+                id: PanelId::Dashboard,
                 title: "Dashboard".into(),
                 description: "Shows all graphs in a responsive grid".into(),
             },
-            BackendPanelInfo {
-                id: BackendPanelId("settings".into()),
+            PanelInfo {
+                id: PanelId::Settings,
                 title: "Sysinfo Settings".into(),
                 description: "Configure sysinfo backend settings".into(),
             },
-            BackendPanelInfo {
-                id: BackendPanelId("temperature".into()),
+            PanelInfo {
+                id: PanelId::Temperature,
                 title: "Temperatures".into(),
                 description: "Shows component temperatures".into(),
             },
-            BackendPanelInfo {
-                id: BackendPanelId("temperature-chart".into()),
+            PanelInfo {
+                id: PanelId::TemperatureChart,
                 title: "Temperature Chart".into(),
                 description: "Shows temperature history chart".into(),
             },
         ]
     }
 
-    pub fn new_panel(&self, panel_id: &BackendPanelId) -> Box<dyn BackendPanel> {
-        match panel_id.0.as_str() {
-            "cpu" => Box::new(CpuPanel::new(self.state.clone())),
-            "memory" => Box::new(MemoryPanel::new(self.state.clone())),
-            "processes" => Box::new(ProcessesPanel::new(self.state.clone())),
-            "selected-process" => Box::new(SelectedProcessPanel::new(self.state.clone())),
-            "network" => Box::new(NetworkPanel::new(self.state.clone())),
-            "disk-io" => Box::new(DiskIoPanel::new(self.state.clone())),
-            "dashboard" => Box::new(DashboardPanel::new(self.state.clone())),
-            "settings" => Box::new(SettingsPanel::new(self.state.clone())),
-            "temperature" => Box::new(TemperaturePanel::new(self.state.clone())),
-            "temperature-chart" => Box::new(TemperatureChartPanel::new(self.state.clone())),
-            _ => panic!("Unknown panel id: {}", panel_id.0),
+    pub fn new_panel(&self, panel_id: &PanelId) -> Box<dyn Panel> {
+        match panel_id {
+            PanelId::Cpu => Box::new(CpuPanel::new(self.state.clone())),
+            PanelId::Memory => Box::new(MemoryPanel::new(self.state.clone())),
+            PanelId::Processes => Box::new(ProcessesPanel::new(self.state.clone())),
+            PanelId::SelectedProcess => Box::new(SelectedProcessPanel::new(self.state.clone())),
+            PanelId::Network => Box::new(NetworkPanel::new(self.state.clone())),
+            PanelId::DiskIo => Box::new(DiskIoPanel::new(self.state.clone())),
+            PanelId::Dashboard => Box::new(DashboardPanel::new(self.state.clone())),
+            PanelId::Settings => Box::new(SettingsPanel::new(self.state.clone())),
+            PanelId::Temperature => Box::new(TemperaturePanel::new(self.state.clone())),
+            PanelId::TemperatureChart => Box::new(TemperatureChartPanel::new(self.state.clone())),
+            _ => panic!("Unknown panel id: {}", panel_id),
         }
     }
 }
@@ -503,22 +495,16 @@ mod tests {
 
     #[test]
     fn local_connection_updates_frontend_data_and_acknowledges_intervals() {
-        use crate::gui::{
-            BackendId,
-            backend::{Connection, FrontendGroup, init_frontend_groups},
-        };
+        use crate::gui::backend::{Connection, FrontendState};
         let cx = egui::Context::default();
-        let groups = init_frontend_groups(&cx);
-        let state = match &groups[&BackendId("sysinfo".into())] {
-            FrontendGroup::Sysinfo(view) => view.state.clone(),
-            _ => unreachable!(),
-        };
+        let frontend = FrontendState::new();
+        let state = frontend.sysinfo.state.clone();
         {
             let mut data = state.lock();
             data.config.update_interval = Duration::from_millis(100);
             data.config.temperature_interval = Duration::from_millis(50);
         }
-        let connection = Connection::new(cx, &groups);
+        let connection = Connection::new(cx, &frontend);
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         loop {
             let data = state.lock();

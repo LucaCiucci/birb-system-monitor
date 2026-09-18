@@ -6,7 +6,7 @@ use egui::{Color32, WidgetText, mutex::Mutex};
 use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
 use serde::{Deserialize, Serialize};
 
-use crate::gui::{BackendPanel, backend::sysinfo::SysinfoSharedState};
+use crate::gui::{Panel, backend::sysinfo::SysinfoSharedState};
 
 const MIN_TIME_SECONDS: f64 = 0.0;
 const MAX_LEGEND_LEN: usize = 22;
@@ -38,7 +38,7 @@ impl TemperatureChartPanel {
     }
 }
 
-impl BackendPanel for TemperatureChartPanel {
+impl Panel for TemperatureChartPanel {
     fn title(&mut self) -> WidgetText {
         "Temperature Chart".into()
     }
