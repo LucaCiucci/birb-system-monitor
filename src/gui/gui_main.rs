@@ -210,6 +210,24 @@ impl MonitorApp {
                 if ui.button("Quit").clicked() {
                     ui.close();
                 }
+
+                if ui.button("Save profile").clicked() {
+                    if let Some(profile) = &mut self.loaded_profile {
+                        let file = rfd::FileDialog::new()
+                            .set_title("Save Profile")
+                            .add_filter("JSON", &["json"])
+                            .add_filter("YAML", &["yaml", "yml"])
+                            .add_filter("TOML", &["toml"])
+                            .add_filter("HJSON", &["hjson"])
+                            .add_filter("RON", &["ron"])
+                            .save_file();
+                        if let Some(file) = file {
+                            if let Err(e) = profile.save(file) {
+                                eprintln!("Failed to save profile: {:?}", e);
+                            }
+                        }
+                    }
+                }
             });
 
             ui.menu_button("view", |ui| {
