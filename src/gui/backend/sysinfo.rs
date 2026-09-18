@@ -140,7 +140,7 @@ pub struct SysinfoConfig {
     /// Number of historical readings to keep and display on plots.
     /// 0 = keep up to 600 (full range).
     pub max_readings: usize,
-    /// When selected PIDs exist, collect details and retain history only for them.
+    /// Collect details and retain history only for selected PIDs.
     #[serde(default = "default_limit_processes_to_selection")]
     pub limit_processes_to_selection: bool,
 }
@@ -340,7 +340,6 @@ impl SysinfoSharedState {
                 for process in std::mem::take(&mut snapshot.processes) {
                     let pid = process.pid.to_pid();
                     let retain_history = !self.config.limit_processes_to_selection
-                        || self.process_selection.selected_processes.is_empty()
                         || self.process_selection.selected_processes.contains(&pid);
                     let metrics = ProcessMetrics {
                         cpu_usage: process.cpu_usage,
@@ -431,6 +430,7 @@ mod tests {
     fn histories_align_and_pid_reuse_starts_fresh() {
         let mut state = SysinfoSharedState::new();
         state.config.max_readings = 2;
+        state.config.limit_processes_to_selection = false;
         state.receive(SysinfoMessage::Snapshot(sample(1, 1)));
         state.receive(SysinfoMessage::Snapshot(sample(2, 1)));
         assert!(!state.process_info.contains_key(&Pid::from_u32(1)));
@@ -471,6 +471,15 @@ mod tests {
 
         assert_eq!(state.process_info[&Pid::from_u32(1)].metrics.len(), 2);
         assert_eq!(state.process_info[&Pid::from_u32(2)].metrics.len(), 1);
+    }
+
+    #[test]
+    fn no_selection_keeps_only_current_process_metrics() {
+        let mut state = SysinfoSharedState::new();
+        state.receive(SysinfoMessage::Snapshot(sample(1, 1)));
+        state.receive(SysinfoMessage::Snapshot(sample(1, 1)));
+
+        assert_eq!(state.process_info[&Pid::from_u32(1)].metrics.len(), 1);
     }
 
     #[test]

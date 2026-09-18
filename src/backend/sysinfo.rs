@@ -196,7 +196,7 @@ impl SnapshotData {
     ) -> Self {
         sys.refresh_cpu_all();
         let selected_pids: Vec<Pid> = selected_processes.iter().map(PidV::to_pid).collect();
-        let include_all_details = !selected_processes_only || selected_pids.is_empty();
+        let include_all_details = !selected_processes_only;
         // The process list needs only identity, CPU, and memory for every process.
         sys.refresh_processes_specifics(
             ProcessesToUpdate::All,
@@ -204,8 +204,8 @@ impl SnapshotData {
             ProcessRefreshKind::nothing().with_cpu().with_memory(),
         );
         // Expensive fields (command line, environment, paths, identities, and disk I/O)
-        // are refreshed only for selected processes. Preserve the legacy behavior when
-        // nothing is selected.
+        // are refreshed only for selected processes. When nothing is selected, retain
+        // only the lightweight process-list data.
         if include_all_details {
             sys.refresh_processes_specifics(
                 ProcessesToUpdate::All,

@@ -55,7 +55,7 @@ impl BackendPanel for SettingsPanel {
                     "Only retain details and history for selected processes",
                 ))
                 .on_hover_text(
-                    "When one or more processes are selected, only they receive full details and metric history. Disable this to retain them for all processes.");
+                    "Only selected processes receive full details and metric history. With no selection, the process list keeps lightweight current data only. Disable this to retain them for all processes.");
                 ui.end_row();
 
                 // Readings
