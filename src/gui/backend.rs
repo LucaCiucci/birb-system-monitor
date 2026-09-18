@@ -70,8 +70,8 @@ pub fn init_frontend_groups(_: &Context) -> HashMap<BackendId, FrontendGroup> {
 
 /// Frontend adapter: receives backend messages, maintains display data, and
 /// wakes egui. The backend sees only the two channel endpoints.
-pub struct LocalConnection {
-    systems: Systems,
+pub struct Connection {
+    transport: Transport,
     commands: tokio::sync::mpsc::Sender<Command>,
     receiver: Option<JoinHandle<()>>,
     sent: HashMap<SystemId, Duration>,
@@ -84,11 +84,46 @@ pub struct LocalConnection {
 pub struct ConnectionStatus {
     pub intervals: HashMap<SystemId, Duration>,
     pub error: Option<String>,
+    pub disconnected: bool,
 }
 
-impl LocalConnection {
+enum Transport {
+    Local(Systems),
+    Ssh(birb_monitor::transport::Remote),
+}
+
+impl Transport {
+    fn shutdown(&mut self) {
+        match self {
+            Self::Local(value) => value.shutdown(),
+            Self::Ssh(value) => value.shutdown(),
+        }
+    }
+}
+
+impl Connection {
+    #[cfg(test)]
     pub fn new(cx: Context, groups: &HashMap<BackendId, FrontendGroup>) -> Self {
-        let (systems, commands, mut messages) = Systems::new().expect("Failed to start backend");
+        Self::connect(cx, groups, None, "birb-monitor").expect("Failed to start backend")
+    }
+
+    pub fn connect(
+        cx: Context,
+        groups: &HashMap<BackendId, FrontendGroup>,
+        host: Option<&str>,
+        ssh_bin: &str,
+    ) -> anyhow::Result<Self> {
+        let (transport, commands, mut messages) = match host {
+            Some(host) => {
+                let (remote, commands, messages) =
+                    birb_monitor::transport::Remote::ssh(host, ssh_bin)?;
+                (Transport::Ssh(remote), commands, messages)
+            }
+            None => {
+                let (systems, commands, messages) = Systems::new()?;
+                (Transport::Local(systems), commands, messages)
+            }
+        };
         let sysinfo = match &groups[&BackendId("sysinfo".into())] {
             FrontendGroup::Sysinfo(view) => view.state.clone(),
             _ => unreachable!(),
@@ -120,9 +155,11 @@ impl LocalConnection {
                 }
                 cx.request_repaint();
             }
+            received_status.lock().disconnected = true;
+            cx.request_repaint();
         });
         let mut result = Self {
-            systems,
+            transport,
             commands,
             receiver: Some(receiver),
             sent: HashMap::new(),
@@ -131,10 +168,13 @@ impl LocalConnection {
             status,
         };
         result.sync_config(groups);
-        result
+        Ok(result)
     }
 
     pub fn sync_config(&mut self, groups: &HashMap<BackendId, FrontendGroup>) {
+        if self.status.lock().disconnected {
+            return;
+        }
         for group in groups.values() {
             let values = match group {
                 FrontendGroup::Sysinfo(view) => {
@@ -198,9 +238,9 @@ impl LocalConnection {
     }
 }
 
-impl Drop for LocalConnection {
+impl Drop for Connection {
     fn drop(&mut self) {
-        self.systems.shutdown();
+        self.transport.shutdown();
         if let Some(receiver) = self.receiver.take() {
             let _ = receiver.join();
         }

@@ -2,7 +2,7 @@ use std::{collections::HashMap, time::Duration};
 
 use super::{
     BackendId, BackendPanel, PanelId,
-    backend::{FrontendGroup, LocalConnection, init_frontend_groups},
+    backend::{Connection, FrontendGroup, init_frontend_groups},
     save::Profile,
     tabs::{Tab, default_dock_state},
     widgets::placeholder_sentence,
@@ -77,7 +77,7 @@ fn make_icon() -> egui::IconData {
     }
 }
 
-pub fn main() -> anyhow::Result<()> {
+pub fn main(ssh: Option<String>, ssh_bin: String) -> anyhow::Result<()> {
     let app_id = env!("CARGO_PKG_NAME");
 
     let mut native_options = eframe::NativeOptions::default();
@@ -92,7 +92,7 @@ pub fn main() -> anyhow::Result<()> {
     eframe::run_native(
         "Birb System Monitor",
         native_options,
-        Box::new(|cc| Ok(Box::new(MonitorApp::new(cc)))),
+        Box::new(move |cc| Ok(Box::new(MonitorApp::new(cc, ssh.clone(), ssh_bin.clone())?))),
     )
     .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -100,7 +100,10 @@ pub fn main() -> anyhow::Result<()> {
 }
 
 struct MonitorApp {
-    connection: Option<LocalConnection>,
+    ssh: Option<String>,
+    ssh_bin: String,
+    connection_error: Option<String>,
+    connection: Option<Connection>,
     loaded_profile: Option<Profile>,
     groups: HashMap<BackendId, FrontendGroup>,
     panels: HashMap<(PanelId, Uuid), Box<dyn BackendPanel>>,
@@ -113,13 +116,23 @@ impl MonitorApp {
         self.connection.take();
         self.loaded_profile = None;
         self.groups = init_frontend_groups(cx);
-        self.connection = Some(LocalConnection::new(cx.clone(), &self.groups));
+        match Connection::connect(cx.clone(), &self.groups, self.ssh.as_deref(), &self.ssh_bin) {
+            Ok(connection) => {
+                self.connection = Some(connection);
+                self.connection_error = None;
+            }
+            Err(error) => self.connection_error = Some(error.to_string()),
+        }
         self.panels.clear();
         self.dock_states = Default::default();
         self.selected_tab = "main".into();
     }
 
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(
+        _cc: &eframe::CreationContext<'_>,
+        ssh: Option<String>,
+        ssh_bin: String,
+    ) -> anyhow::Result<Self> {
         let loaded_profile: Option<Profile> = _cc
             .storage
             .and_then(|storage| storage.get_string("profile"))
@@ -172,15 +185,23 @@ impl MonitorApp {
             }
         }
 
-        let connection = Some(LocalConnection::new(_cc.egui_ctx.clone(), &groups));
-        Self {
+        let connection = Some(Connection::connect(
+            _cc.egui_ctx.clone(),
+            &groups,
+            ssh.as_deref(),
+            &ssh_bin,
+        )?);
+        Ok(Self {
+            ssh,
+            ssh_bin,
+            connection_error: None,
             connection,
             loaded_profile,
             groups,
             panels,
             dock_states,
             selected_tab: "main".into(),
-        }
+        })
     }
 
     fn menu(&mut self, ui: &mut Ui) {
@@ -218,9 +239,22 @@ impl MonitorApp {
 
 impl eframe::App for MonitorApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        if let Some(host) = &self.ssh {
+            ui.label(format!("Remote: {host}"));
+        }
+        if let Some(error) = &self.connection_error {
+            ui.colored_label(Color32::RED, error);
+        }
         if let Some(connection) = &mut self.connection {
             connection.sync_config(&self.groups);
-            if let Some(error) = &connection.status.lock().error {
+            let status = connection.status.lock();
+            if status.disconnected {
+                ui.colored_label(
+                    Color32::RED,
+                    "Backend disconnected — displayed readings are stale. Restart to reconnect.",
+                );
+            }
+            if let Some(error) = &status.error {
                 ui.colored_label(Color32::RED, error);
             }
         }

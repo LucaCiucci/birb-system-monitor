@@ -505,7 +505,7 @@ mod tests {
     fn local_connection_updates_frontend_data_and_acknowledges_intervals() {
         use crate::gui::{
             BackendId,
-            backend::{FrontendGroup, LocalConnection, init_frontend_groups},
+            backend::{Connection, FrontendGroup, init_frontend_groups},
         };
         let cx = egui::Context::default();
         let groups = init_frontend_groups(&cx);
@@ -518,7 +518,7 @@ mod tests {
             data.config.update_interval = Duration::from_millis(100);
             data.config.temperature_interval = Duration::from_millis(50);
         }
-        let connection = LocalConnection::new(cx, &groups);
+        let connection = Connection::new(cx, &groups);
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         loop {
             let data = state.lock();
