@@ -12,7 +12,10 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SysinfoCommand {
     Refresh,
-    SetSelectedProcesses(Vec<PidV>),
+    SetProcessDetailSelection {
+        pids: Vec<PidV>,
+        selected_only: bool,
+    },
 }
 
 /// Owns the live collectors; emits lightweight samples plus details for selected processes.
@@ -21,6 +24,7 @@ pub struct SystemHandler {
     collector: Option<SystemCollector>,
     tx: mpsc::Sender<Message>,
     selected_processes: Vec<PidV>,
+    selected_processes_only: bool,
 }
 
 impl SystemHandler {
@@ -29,6 +33,7 @@ impl SystemHandler {
             collector: None,
             tx,
             selected_processes: Vec::new(),
+            selected_processes_only: true,
         }
     }
 }
@@ -37,8 +42,12 @@ impl TimedTaskHandler<SysinfoCommand> for SystemHandler {
     async fn handle(&mut self, event: TimedTaskEvent<SysinfoCommand>) {
         match event {
             TimedTaskEvent::Tick | TimedTaskEvent::Message(SysinfoCommand::Refresh) => {}
-            TimedTaskEvent::Message(SysinfoCommand::SetSelectedProcesses(pids)) => {
+            TimedTaskEvent::Message(SysinfoCommand::SetProcessDetailSelection {
+                pids,
+                selected_only,
+            }) => {
                 self.selected_processes = pids;
+                self.selected_processes_only = selected_only;
                 return;
             }
         }
@@ -47,9 +56,10 @@ impl TimedTaskHandler<SysinfoCommand> for SystemHandler {
         }
         let collector = self.collector.take();
         let selected_processes = self.selected_processes.clone();
+        let selected_processes_only = self.selected_processes_only;
         let (collector, snapshot) = tokio::task::spawn_blocking(move || {
             let mut collector = collector.unwrap_or_else(SystemCollector::new);
-            let snapshot = collector.sample(&selected_processes);
+            let snapshot = collector.sample(&selected_processes, selected_processes_only);
             (collector, snapshot)
         })
         .await
@@ -88,7 +98,7 @@ impl TimedTaskHandler<SysinfoCommand> for ComponentsHandler {
     async fn handle(&mut self, event: TimedTaskEvent<SysinfoCommand>) {
         match event {
             TimedTaskEvent::Tick | TimedTaskEvent::Message(SysinfoCommand::Refresh) => {}
-            TimedTaskEvent::Message(SysinfoCommand::SetSelectedProcesses(_)) => return,
+            TimedTaskEvent::Message(SysinfoCommand::SetProcessDetailSelection { .. }) => return,
         }
         if self.tx.is_closed() {
             return;
@@ -139,7 +149,11 @@ impl SystemCollector {
         }
     }
 
-    fn sample(&mut self, selected_processes: &[PidV]) -> SnapshotData {
+    fn sample(
+        &mut self,
+        selected_processes: &[PidV],
+        selected_processes_only: bool,
+    ) -> SnapshotData {
         self.networks.refresh(true);
         self.disks.refresh(true);
         SnapshotData::take(
@@ -147,6 +161,7 @@ impl SystemCollector {
             &self.networks,
             &self.disks,
             selected_processes,
+            selected_processes_only,
         )
     }
 }
@@ -177,10 +192,11 @@ impl SnapshotData {
         networks: &Networks,
         disks: &Disks,
         selected_processes: &[PidV],
+        selected_processes_only: bool,
     ) -> Self {
         sys.refresh_cpu_all();
         let selected_pids: Vec<Pid> = selected_processes.iter().map(PidV::to_pid).collect();
-        let include_all_details = selected_pids.is_empty();
+        let include_all_details = !selected_processes_only || selected_pids.is_empty();
         // The process list needs only identity, CPU, and memory for every process.
         sys.refresh_processes_specifics(
             ProcessesToUpdate::All,

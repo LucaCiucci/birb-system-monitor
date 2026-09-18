@@ -140,6 +140,9 @@ pub struct SysinfoConfig {
     /// Number of historical readings to keep and display on plots.
     /// 0 = keep up to 600 (full range).
     pub max_readings: usize,
+    /// When selected PIDs exist, collect details and retain history only for them.
+    #[serde(default = "default_limit_processes_to_selection")]
+    pub limit_processes_to_selection: bool,
 }
 
 impl SysinfoConfig {
@@ -167,12 +170,17 @@ fn default_temperature_interval() -> Duration {
     Duration::from_secs(5)
 }
 
+fn default_limit_processes_to_selection() -> bool {
+    true
+}
+
 impl Default for SysinfoConfig {
     fn default() -> Self {
         Self {
             update_interval: Duration::from_secs(1),
             temperature_interval: default_temperature_interval(),
             max_readings: 60,
+            limit_processes_to_selection: default_limit_processes_to_selection(),
         }
     }
 }
@@ -331,7 +339,8 @@ impl SysinfoSharedState {
                 let pids: HashSet<_> = snapshot.pids.iter().map(|p| p.to_pid()).collect();
                 for process in std::mem::take(&mut snapshot.processes) {
                     let pid = process.pid.to_pid();
-                    let retain_history = self.process_selection.selected_processes.is_empty()
+                    let retain_history = !self.config.limit_processes_to_selection
+                        || self.process_selection.selected_processes.is_empty()
                         || self.process_selection.selected_processes.contains(&pid);
                     let metrics = ProcessMetrics {
                         cpu_usage: process.cpu_usage,
@@ -462,6 +471,25 @@ mod tests {
 
         assert_eq!(state.process_info[&Pid::from_u32(1)].metrics.len(), 2);
         assert_eq!(state.process_info[&Pid::from_u32(2)].metrics.len(), 1);
+    }
+
+    #[test]
+    fn disabling_selected_only_retains_history_for_all_processes() {
+        let mut state = SysinfoSharedState::new();
+        state.config.limit_processes_to_selection = false;
+        state.process_selection.select_process(Pid::from_u32(1));
+
+        for _ in 0..2 {
+            let mut snapshot = sample(1, 1);
+            let mut second = snapshot.processes[0].clone();
+            second.pid = PidV(2);
+            snapshot.pids.push(PidV(2));
+            snapshot.processes.push(second);
+            state.receive(SysinfoMessage::Snapshot(snapshot));
+        }
+
+        assert_eq!(state.process_info[&Pid::from_u32(1)].metrics.len(), 2);
+        assert_eq!(state.process_info[&Pid::from_u32(2)].metrics.len(), 2);
     }
 
     #[test]

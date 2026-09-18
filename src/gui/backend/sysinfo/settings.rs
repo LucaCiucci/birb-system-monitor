@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use egui::{Grid, WidgetText, mutex::Mutex};
+use egui::{Checkbox, Grid, WidgetText, mutex::Mutex};
 
 use crate::gui::{
     BackendPanel,
@@ -31,6 +31,7 @@ impl BackendPanel for SettingsPanel {
         let config = data.config.clone();
         let mut interval_secs = config.update_interval.as_secs_f32();
         let mut readings = config.max_readings;
+        let mut limit_processes_to_selection = config.limit_processes_to_selection;
 
         Grid::new("sysinfo_settings_grid")
             .num_columns(2)
@@ -46,6 +47,15 @@ impl BackendPanel for SettingsPanel {
                             .suffix(" s"),
                     );
                 });
+                ui.end_row();
+
+                ui.label("Process collection:");
+                ui.add(Checkbox::new(
+                    &mut limit_processes_to_selection,
+                    "Only retain details and history for selected processes",
+                ))
+                .on_hover_text(
+                    "When one or more processes are selected, only they receive full details and metric history. Disable this to retain them for all processes.");
                 ui.end_row();
 
                 // Readings
@@ -78,6 +88,7 @@ impl BackendPanel for SettingsPanel {
             update_interval: Duration::from_secs_f32(interval_secs),
             max_readings: readings,
             temperature_interval: config.temperature_interval,
+            limit_processes_to_selection,
         };
 
         if new_config != config {

@@ -75,7 +75,7 @@ pub struct LocalConnection {
     commands: tokio::sync::mpsc::Sender<Command>,
     receiver: Option<JoinHandle<()>>,
     sent: HashMap<SystemId, Duration>,
-    selected_processes: Option<HashSet<PidV>>,
+    process_detail_selection: Option<(HashSet<PidV>, bool)>,
     socket: Option<String>,
     pub status: Arc<Mutex<ConnectionStatus>>,
 }
@@ -126,7 +126,7 @@ impl LocalConnection {
             commands,
             receiver: Some(receiver),
             sent: HashMap::new(),
-            selected_processes: None,
+            process_detail_selection: None,
             socket: None,
             status,
         };
@@ -144,15 +144,20 @@ impl LocalConnection {
                         .selected_pids()
                         .map(PidV::from)
                         .collect::<HashSet<_>>();
-                    if self.selected_processes.as_ref() != Some(&selected_processes)
+                    let detail_selection =
+                        (selected_processes, config.limit_processes_to_selection);
+                    if self.process_detail_selection.as_ref() != Some(&detail_selection)
                         && self
                             .commands
-                            .try_send(Command::Sysinfo(SysinfoCommand::SetSelectedProcesses(
-                                selected_processes.iter().copied().collect(),
-                            )))
+                            .try_send(Command::Sysinfo(
+                                SysinfoCommand::SetProcessDetailSelection {
+                                    pids: detail_selection.0.iter().copied().collect(),
+                                    selected_only: detail_selection.1,
+                                },
+                            ))
                             .is_ok()
                     {
-                        self.selected_processes = Some(selected_processes);
+                        self.process_detail_selection = Some(detail_selection);
                     }
                     vec![
                         (SystemId::System, config.update_interval),
