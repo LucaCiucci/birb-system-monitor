@@ -126,6 +126,7 @@ fn cpu_plot(
             let seconds_ago = latest
                 .captured_at
                 .duration_since(snapshot.captured_at)
+                .unwrap()
                 .as_secs_f64();
             [
                 seconds_ago,
@@ -210,6 +211,7 @@ fn selected_cpu_points(
             let seconds_ago = latest
                 .captured_at
                 .duration_since(snapshot.captured_at)
+                .unwrap()
                 .as_secs_f64();
             let selected_usage = selected_processes
                 .iter()
@@ -248,6 +250,7 @@ fn stacked_cpu_layers(snapshots: &[SnapshotData], latest: &SnapshotData) -> Vec<
         let seconds_ago = latest
             .captured_at
             .duration_since(snapshot.captured_at)
+            .unwrap()
             .as_secs_f64();
         let raw_sum = snapshot
             .cpu_stats
@@ -294,6 +297,7 @@ fn total_cpu_layer(snapshots: &[SnapshotData], latest: &SnapshotData) -> CpuLaye
         let seconds_ago = latest
             .captured_at
             .duration_since(snapshot.captured_at)
+            .unwrap()
             .as_secs_f64();
 
         layer.xs.push(seconds_ago);
@@ -313,6 +317,7 @@ fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData, min_windo
             latest
                 .captured_at
                 .duration_since(oldest.captured_at)
+                .unwrap()
                 .as_secs_f64()
                 .max(1.0)
         })

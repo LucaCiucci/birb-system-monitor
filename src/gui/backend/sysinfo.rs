@@ -1,19 +1,20 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
-    thread::JoinHandle,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
+pub(super) use birb_monitor::backend::sysinfo::SnapshotData;
+use birb_monitor::backend::sysinfo::{
+    ComponentsSnapshot, ProcessDiskUsage, ProcessSnapshot, SysinfoMessage,
+};
 use egui::{WidgetText, mutex::Mutex};
 use serde::{Deserialize, Serialize};
-use sysinfo::{
-    DiskUsage, Disks, Gid, Networks, Pid, ProcessStatus, ProcessesToUpdate, System, Uid,
-};
+use sysinfo::Pid;
 use ustr::Ustr;
 
 use crate::gui::{
-    Backend, BackendPanel, BackendPanelId, BackendPanelInfo,
+    BackendPanel, BackendPanelId, BackendPanelInfo,
     backend::sysinfo::{
         cpu::CpuPanel, dashboard::DashboardPanel, disk_io::DiskIoPanel, memory::MemoryPanel,
         network::NetworkPanel, proc_list::ProcessesPanel, selected_process::SelectedProcessPanel,
@@ -33,52 +34,33 @@ mod settings;
 mod temperature;
 mod temperature_chart;
 
-pub struct SysinfoBackend {
-    state: Arc<Mutex<SysinfoSharedState>>,
-    updater: Option<JoinHandle<()>>,
+pub struct SysinfoFrontend {
+    pub(super) state: Arc<Mutex<SysinfoSharedState>>,
 }
 
-impl Drop for SysinfoBackend {
-    fn drop(&mut self) {
-        let mut data = self.state.lock();
-        data.should_stop = true;
-        drop(data);
-        if let Some(updater) = self.updater.take() {
-            updater.join().expect("Failed to join updater thread");
-        }
-    }
-}
-
-impl SysinfoBackend {
-    pub fn new(cx: egui::Context) -> Self {
-        let state = SysinfoSharedState::new(cx);
-        let state = Arc::new(Mutex::new(state));
-        let updater = {
-            let state = Arc::clone(&state);
-            std::thread::spawn(move || worker_thread(state))
-        };
+impl SysinfoFrontend {
+    pub fn new() -> Self {
         Self {
-            state,
-            updater: Some(updater),
+            state: Arc::new(Mutex::new(SysinfoSharedState::new())),
         }
     }
 }
 
-impl Backend for SysinfoBackend {
-    fn name(&self) -> WidgetText {
+impl SysinfoFrontend {
+    pub fn name(&self) -> WidgetText {
         "Sysinfo".into()
     }
 
-    fn save_config(&self) -> anyhow::Result<serde_json::Value> {
+    pub fn save_config(&self) -> anyhow::Result<serde_json::Value> {
         Ok(serde_json::to_value(&self.state.lock().config)?)
     }
 
-    fn load_config(&mut self, config: &serde_json::Value) -> anyhow::Result<()> {
+    pub fn load_config(&mut self, config: &serde_json::Value) -> anyhow::Result<()> {
         self.state.lock().config = serde_json::from_value(config.clone())?;
         Ok(())
     }
 
-    fn panels(&self) -> Vec<BackendPanelInfo> {
+    pub fn panels(&self) -> Vec<BackendPanelInfo> {
         vec![
             BackendPanelInfo {
                 id: BackendPanelId("cpu".into()),
@@ -133,7 +115,7 @@ impl Backend for SysinfoBackend {
         ]
     }
 
-    fn new_panel(&self, panel_id: &BackendPanelId) -> Box<dyn BackendPanel> {
+    pub fn new_panel(&self, panel_id: &BackendPanelId) -> Box<dyn BackendPanel> {
         match panel_id.0.as_str() {
             "cpu" => Box::new(CpuPanel::new(self.state.clone())),
             "memory" => Box::new(MemoryPanel::new(self.state.clone())),
@@ -152,10 +134,15 @@ impl Backend for SysinfoBackend {
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct SysinfoConfig {
-    update_interval: Duration,
+    pub(super) update_interval: Duration,
+    #[serde(default = "default_temperature_interval")]
+    pub(super) temperature_interval: Duration,
     /// Number of historical readings to keep and display on plots.
     /// 0 = keep up to 600 (full range).
     pub max_readings: usize,
+    /// Collect details and retain history only for selected PIDs.
+    #[serde(default = "default_limit_processes_to_selection")]
+    pub limit_processes_to_selection: bool,
 }
 
 impl SysinfoConfig {
@@ -179,34 +166,50 @@ impl SysinfoConfig {
     }
 }
 
+fn default_temperature_interval() -> Duration {
+    Duration::from_secs(5)
+}
+
+fn default_limit_processes_to_selection() -> bool {
+    true
+}
+
 impl Default for SysinfoConfig {
     fn default() -> Self {
         Self {
             update_interval: Duration::from_secs(1),
+            temperature_interval: default_temperature_interval(),
             max_readings: 60,
+            limit_processes_to_selection: default_limit_processes_to_selection(),
         }
     }
 }
 
 pub(super) struct SysinfoSharedState {
-    config: SysinfoConfig,
+    pub(super) applied_update_interval: Option<Duration>,
+    pub(super) applied_temperature_interval: Option<Duration>,
+    pub(super) config: SysinfoConfig,
     process_selection: ProcessSelection,
     process_info: HashMap<Pid, ProcessInfo>,
     data: Vec<SnapshotData>,
-    cx: egui::Context,
-    should_stop: bool,
+    temperatures: Vec<ComponentsSnapshot>,
 }
 
 impl SysinfoSharedState {
-    fn new(cx: egui::Context) -> Self {
+    fn new() -> Self {
         Self {
+            applied_update_interval: None,
+            applied_temperature_interval: None,
             config: Default::default(),
             process_selection: Default::default(),
             process_info: HashMap::new(),
             data: Vec::new(),
-            cx,
-            should_stop: false,
+            temperatures: Vec::new(),
         }
+    }
+
+    pub(super) fn selected_pids(&self) -> impl Iterator<Item = Pid> + '_ {
+        self.process_selection.selected_processes.iter().copied()
     }
 }
 
@@ -244,189 +247,11 @@ impl ProcessSelection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct SnapshotData {
-    pub(super) captured_at: Instant,
-    pub(super) general_stats: GeneralStats,
-    pub(super) cpu_stats: CpuStats,
-    pub(super) network_stats: NetworkStats,
-    pub(super) disk_io_stats: DiskIoStats,
-    pub(super) component_stats: ComponentStats,
-    pub(super) pids: Vec<Pid>,
-}
-
-impl SnapshotData {
-    fn take(sys: &mut System) -> Self {
-        sys.refresh_cpu_all();
-        sys.refresh_processes(ProcessesToUpdate::All, true);
-        Self {
-            captured_at: Instant::now(),
-            general_stats: GeneralStats::take(sys),
-            cpu_stats: CpuStats::take(sys),
-            network_stats: NetworkStats::take_default(),
-            disk_io_stats: DiskIoStats::take_default(),
-            component_stats: ComponentStats::take_default(),
-            pids: sys.processes().keys().copied().collect(),
-        }
-    }
-}
-
-pub struct Snapshot<T> {
-    pub time: Instant,
-    pub data: T,
-}
-
-impl<T> Snapshot<T> {
-    pub fn new(data: T) -> Self {
-        Self {
-            time: Instant::now(),
-            data,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct GeneralStats {
-    pub(super) total_memory: u64,
-    pub(super) used_memory: u64,
-    pub(super) total_swap: u64,
-    pub(super) used_swap: u64,
-}
-
-impl GeneralStats {
-    fn take(sys: &mut System) -> Self {
-        sys.refresh_memory();
-        Self {
-            total_memory: sys.total_memory(),
-            used_memory: sys.used_memory(),
-            total_swap: sys.total_swap(),
-            used_swap: sys.used_swap(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub(super) struct ComponentStats {
-    pub(super) components: Vec<ComponentSnapshot>,
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub(super) struct ComponentSnapshot {
-    pub(super) label: String,
-    pub(super) temperature: Option<f32>,
-    pub(super) max: Option<f32>,
-    pub(super) critical: Option<f32>,
-}
-
-impl ComponentStats {
-    fn take(components: &sysinfo::Components) -> Self {
-        Self {
-            components: components
-                .iter()
-                .map(|c| ComponentSnapshot {
-                    label: c.label().to_string(),
-                    temperature: c.temperature(),
-                    max: c.max(),
-                    critical: c.critical(),
-                })
-                .collect(),
-        }
-    }
-
-    fn take_default() -> Self {
-        Self {
-            components: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub(super) struct CpuStats {
-    pub(super) global_usage: f32,
-    pub(super) per_cpu_usage: Vec<f32>,
-}
-
-impl CpuStats {
-    fn take(sys: &System) -> Self {
-        Self {
-            global_usage: sys.global_cpu_usage(),
-            per_cpu_usage: sys.cpus().iter().map(|cpu| cpu.cpu_usage()).collect(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub(super) struct NetworkStats {
-    pub(super) total_received: u64,
-    pub(super) total_transmitted: u64,
-}
-
-impl NetworkStats {
-    fn take(networks: &Networks) -> Self {
-        let mut total_received = 0u64;
-        let mut total_transmitted = 0u64;
-        for (_name, data) in networks.iter() {
-            total_received = total_received.saturating_add(data.total_received());
-            total_transmitted = total_transmitted.saturating_add(data.total_transmitted());
-        }
-        Self {
-            total_received,
-            total_transmitted,
-        }
-    }
-
-    fn take_default() -> Self {
-        Self {
-            total_received: 0,
-            total_transmitted: 0,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub(super) struct DiskIoStats {
-    pub(super) total_read_bytes: u64,
-    pub(super) total_written_bytes: u64,
-}
-
-impl DiskIoStats {
-    fn take(disks: &Disks) -> Self {
-        let mut total_read_bytes = 0u64;
-        let mut total_written_bytes = 0u64;
-        for disk in disks.iter() {
-            let usage = disk.usage();
-            total_read_bytes = total_read_bytes.saturating_add(usage.total_read_bytes);
-            total_written_bytes = total_written_bytes.saturating_add(usage.total_written_bytes);
-        }
-        Self {
-            total_read_bytes,
-            total_written_bytes,
-        }
-    }
-
-    fn take_default() -> Self {
-        Self {
-            total_read_bytes: 0,
-            total_written_bytes: 0,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct ProcessMetrics {
     pub(super) cpu_usage: f32,
     pub(super) memory: u64,
     pub(super) virtual_memory: u64,
-}
-
-impl ProcessMetrics {
-    fn from_process(process: &sysinfo::Process) -> Self {
-        Self {
-            cpu_usage: process.cpu_usage(),
-            memory: process.memory(),
-            virtual_memory: process.virtual_memory(),
-        }
-    }
 }
 
 impl Default for ProcessMetrics {
@@ -450,52 +275,44 @@ pub(super) struct ProcessDetail {
     pub(super) cwd: Option<Ustr>,
     pub(super) root: Option<Ustr>,
     pub(super) accumulated_cpu_time: Duration,
-    pub(super) du: DiskUsage,
-    pub(super) status: ProcessStatus,
-    pub(super) user_id: Option<Uid>,
-    pub(super) effective_user_id: Option<Uid>,
-    pub(super) group_id: Option<Gid>,
-    pub(super) effective_group_id: Option<Gid>,
+    pub(super) du: ProcessDiskUsage,
+    pub(super) status: String,
+    pub(super) user_id: Option<String>,
+    pub(super) effective_user_id: Option<String>,
+    pub(super) group_id: Option<String>,
+    pub(super) effective_group_id: Option<String>,
     pub(super) start_time: u64,
     pub(super) run_time: u64,
     pub(super) session_id: Option<Pid>,
     pub(super) open_files: Option<usize>,
     pub(super) open_files_limit: Option<usize>,
-    pub(super) thread_kind: Option<sysinfo::ThreadKind>,
+    pub(super) thread_kind: Option<String>,
 }
 
-impl ProcessDetail {
-    fn from_process(process: &sysinfo::Process) -> Self {
+impl From<ProcessSnapshot> for ProcessDetail {
+    fn from(p: ProcessSnapshot) -> Self {
         Self {
-            pid: process.pid(),
-            parent: process.parent(),
-            name: process.name().to_string_lossy().into(),
-            cmd: process
-                .cmd()
-                .iter()
-                .map(|s| s.to_string_lossy().into())
-                .collect(),
-            exe: process.exe().map(|p| p.to_string_lossy().into()),
-            environ: process
-                .environ()
-                .iter()
-                .map(|s| s.to_string_lossy().into())
-                .collect(),
-            cwd: process.cwd().map(|s| s.to_string_lossy().into()),
-            root: process.root().map(|s| s.to_string_lossy().into()),
-            accumulated_cpu_time: Duration::from_millis(process.accumulated_cpu_time()),
-            du: process.disk_usage(),
-            status: process.status(),
-            user_id: process.user_id().cloned(),
-            effective_user_id: process.effective_user_id().cloned(),
-            group_id: process.group_id(),
-            effective_group_id: process.effective_group_id(),
-            start_time: process.start_time(),
-            run_time: process.run_time(),
-            session_id: process.session_id(),
-            open_files: process.open_files(),
-            open_files_limit: process.open_files_limit(),
-            thread_kind: process.thread_kind(),
+            pid: p.pid.to_pid(),
+            parent: p.parent.map(|p| p.to_pid()),
+            name: p.name.as_str().into(),
+            cmd: p.cmd.iter().map(|s| s.as_str().into()).collect(),
+            exe: p.exe.as_deref().map(Into::into),
+            environ: p.environ.iter().map(|s| s.as_str().into()).collect(),
+            cwd: p.cwd.as_deref().map(Into::into),
+            root: p.root.as_deref().map(Into::into),
+            accumulated_cpu_time: p.accumulated_cpu_time,
+            du: p.disk_usage,
+            status: p.status,
+            user_id: p.user_id,
+            effective_user_id: p.effective_user_id,
+            group_id: p.group_id,
+            effective_group_id: p.effective_group_id,
+            start_time: p.start_time,
+            run_time: p.run_time,
+            session_id: p.session_id.map(|p| p.to_pid()),
+            open_files: p.open_files,
+            open_files_limit: p.open_files_limit,
+            thread_kind: p.thread_kind,
         }
     }
 }
@@ -503,113 +320,222 @@ impl ProcessDetail {
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct ProcessInfo {
     pub(super) detail: ProcessDetail,
-    /// History of metrics, length always matches `data.len()` in shared state.
-    /// For processes that existed from the beginning, metrics[i] corresponds to data[i].
-    /// For processes that appeared later, earlier entries are zero-filled.
+    /// Retained metrics for selected processes. Unselected processes keep only their
+    /// latest reading for the process list.
     pub(super) metrics: VecDeque<ProcessMetrics>,
 }
 
-fn worker_thread(state: Arc<Mutex<SysinfoSharedState>>) {
-    let mut sys = System::new_all();
-    let mut networks = Networks::new_with_refreshed_list();
-    let mut disks = Disks::new_with_refreshed_list();
-    let mut components = sysinfo::Components::new_with_refreshed_list();
-
-    // Refresh interval for components (not all systems support frequent updates)
-    let mut last_component_refresh = Instant::now();
-
-    loop {
-        let (cx, update_interval) = {
-            let data = state.lock();
-            if data.should_stop {
-                return;
+impl SysinfoSharedState {
+    pub(super) fn receive(&mut self, message: SysinfoMessage) {
+        let max = self.config.max_history_readings().min(10000);
+        match message {
+            SysinfoMessage::Components(snapshot) => {
+                self.temperatures.push(snapshot);
+                let excess = self.temperatures.len().saturating_sub(max);
+                self.temperatures.drain(..excess);
             }
-            (data.cx.clone(), data.config.update_interval)
-        };
-
-        networks.refresh(true);
-        disks.refresh(false);
-
-        // Refresh components less frequently (every ~5s or on first call)
-        let refresh_components = last_component_refresh.elapsed() >= Duration::from_secs(5);
-        if refresh_components {
-            for c in components.iter_mut() {
-                c.refresh();
-            }
-            last_component_refresh = Instant::now();
-        }
-
-        // Build the system-wide snapshot (just PIDs + general stats)
-        let snapshot = SnapshotData::take(&mut sys);
-
-        let mut data = state.lock();
-
-        // Update process info before pushing snapshot
-        let snapshot_pids: HashSet<Pid> = snapshot.pids.iter().copied().collect();
-
-        let existing_snapshot_count = data.data.len();
-        for pid in &snapshot.pids {
-            if let Some(process) = sys.processes().get(pid) {
-                let metrics = ProcessMetrics::from_process(process);
-                let detail = ProcessDetail::from_process(process);
-
-                use std::collections::hash_map::Entry;
-                match data.process_info.entry(*pid) {
-                    Entry::Occupied(mut e) => {
-                        let info = e.get_mut();
-                        info.detail = detail;
+            SysinfoMessage::Snapshot(mut snapshot) => {
+                let count = self.data.len();
+                let pids: HashSet<_> = snapshot.pids.iter().map(|p| p.to_pid()).collect();
+                for process in std::mem::take(&mut snapshot.processes) {
+                    let pid = process.pid.to_pid();
+                    let retain_history = !self.config.limit_processes_to_selection
+                        || self.process_selection.selected_processes.contains(&pid);
+                    let metrics = ProcessMetrics {
+                        cpu_usage: process.cpu_usage,
+                        memory: process.memory,
+                        virtual_memory: process.virtual_memory,
+                    };
+                    // PID reuse starts a new history even if the old PID never disappeared.
+                    if self
+                        .process_info
+                        .get(&pid)
+                        .is_some_and(|p| p.detail.start_time != process.start_time)
+                    {
+                        self.process_info.remove(&pid);
+                    }
+                    let detail = ProcessDetail::from(process);
+                    let info = self.process_info.entry(pid).or_insert_with(|| ProcessInfo {
+                        detail: detail.clone(),
+                        metrics: if retain_history {
+                            VecDeque::from(vec![ProcessMetrics::default(); count])
+                        } else {
+                            VecDeque::new()
+                        },
+                    });
+                    info.detail = detail;
+                    if retain_history {
+                        if info.metrics.len() <= 1 {
+                            info.metrics = VecDeque::from(vec![ProcessMetrics::default(); count]);
+                        }
+                        info.metrics.push_back(metrics);
+                    } else {
+                        info.metrics.clear();
                         info.metrics.push_back(metrics);
                     }
-                    Entry::Vacant(e) => {
-                        let mut metrics_deque = VecDeque::new();
-                        // Pad with zeros to match existing snapshot count
-                        for _ in 0..existing_snapshot_count {
-                            metrics_deque.push_back(ProcessMetrics::default());
-                        }
-                        metrics_deque.push_back(metrics);
-                        e.insert(ProcessInfo {
-                            detail,
-                            metrics: metrics_deque,
-                        });
+                }
+                self.process_info.retain(|pid, _| pids.contains(pid));
+                self.process_selection.retain_existing_pids(&pids);
+                self.data.push(snapshot);
+                let excess = self.data.len().saturating_sub(max);
+                self.data.drain(..excess);
+                for info in self.process_info.values_mut() {
+                    if info.metrics.len() > 1 {
+                        info.metrics.drain(..excess);
                     }
                 }
             }
         }
+    }
+}
 
-        // Remove dead PIDs from process_info
-        data.process_info
-            .retain(|pid, _| snapshot_pids.contains(pid));
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use birb_monitor::backend::sysinfo::{
+        ComponentStats, CpuStats, DiskIoStats, GeneralStats, NetworkStats, PidV,
+    };
 
-        // Push snapshot (after process_info so indices align)
-        data.data.push(snapshot);
+    fn sample(pid: u32, start_time: u64) -> SnapshotData {
+        let process: ProcessSnapshot = serde_json::from_value(serde_json::json!({
+            "pid": pid, "parent": null, "name": "test", "cmd": [], "exe": null,
+            "environ": [], "cwd": null, "root": null, "cpu_usage": 25.0,
+            "memory": 100, "virtual_memory": 200, "accumulated_cpu_time": {"secs": 1, "nanos": 0},
+            "disk_usage": {"read_bytes": 0, "written_bytes": 0, "total_read_bytes": 0, "total_written_bytes": 0},
+            "status": "running", "user_id": null, "effective_user_id": null,
+            "group_id": null, "effective_group_id": null, "start_time": start_time,
+            "run_time": 1, "session_id": null, "open_files": null, "open_files_limit": null,
+            "thread_kind": null
+        })).unwrap();
+        SnapshotData {
+            captured_at: std::time::SystemTime::now(),
+            general_stats: GeneralStats {
+                total_memory: 1000,
+                used_memory: 100,
+                total_swap: 0,
+                used_swap: 0,
+            },
+            cpu_stats: CpuStats {
+                global_usage: 25.0,
+                per_cpu_usage: vec![25.0],
+            },
+            network_stats: NetworkStats::take_default(),
+            disk_io_stats: DiskIoStats::take_default(),
+            pids: vec![PidV(pid)],
+            processes: vec![process],
+        }
+    }
 
-        // Also update network/disk/temp data in the latest snapshot
-        if let Some(latest) = data.data.last_mut() {
-            latest.network_stats = NetworkStats::take(&networks);
-            latest.disk_io_stats = DiskIoStats::take(&disks);
-            latest.component_stats = ComponentStats::take(&components);
+    #[test]
+    fn histories_align_and_pid_reuse_starts_fresh() {
+        let mut state = SysinfoSharedState::new();
+        state.config.max_readings = 2;
+        state.config.limit_processes_to_selection = false;
+        state.receive(SysinfoMessage::Snapshot(sample(1, 1)));
+        state.receive(SysinfoMessage::Snapshot(sample(2, 1)));
+        assert!(!state.process_info.contains_key(&Pid::from_u32(1)));
+        let info = &state.process_info[&Pid::from_u32(2)];
+        assert_eq!(info.metrics.len(), 2);
+        assert_eq!(info.metrics[0].memory, 0);
+        assert_eq!(info.metrics[1].memory, 100);
+        state.receive(SysinfoMessage::Snapshot(sample(2, 2)));
+        let info = &state.process_info[&Pid::from_u32(2)];
+        assert_eq!(state.data.len(), 2);
+        assert_eq!(info.metrics.len(), 2);
+        assert_eq!(info.metrics[0].memory, 0);
+        assert_eq!(info.detail.start_time, 2);
+        for _ in 0..3 {
+            state.receive(SysinfoMessage::Components(ComponentsSnapshot {
+                captured_at: std::time::SystemTime::now(),
+                component_stats: ComponentStats::take_default(),
+            }));
+        }
+        assert_eq!(state.temperatures.len(), 2);
+        assert_eq!(state.data.len(), 2);
+        assert_eq!(state.process_info[&Pid::from_u32(2)].metrics.len(), 2);
+    }
+
+    #[test]
+    fn unselected_processes_keep_only_their_latest_metrics() {
+        let mut state = SysinfoSharedState::new();
+        state.process_selection.select_process(Pid::from_u32(1));
+
+        for _ in 0..2 {
+            let mut snapshot = sample(1, 1);
+            let mut second = snapshot.processes[0].clone();
+            second.pid = PidV(2);
+            snapshot.pids.push(PidV(2));
+            snapshot.processes.push(second);
+            state.receive(SysinfoMessage::Snapshot(snapshot));
         }
 
-        // Trim old data
-        let max_history = data.config.max_history_readings();
-        let excess = data.data.len().saturating_sub(max_history);
-        if excess > 0 {
-            data.data.drain(..excess);
-            for info in data.process_info.values_mut() {
-                info.metrics.drain(..excess);
+        assert_eq!(state.process_info[&Pid::from_u32(1)].metrics.len(), 2);
+        assert_eq!(state.process_info[&Pid::from_u32(2)].metrics.len(), 1);
+    }
+
+    #[test]
+    fn no_selection_keeps_only_current_process_metrics() {
+        let mut state = SysinfoSharedState::new();
+        state.receive(SysinfoMessage::Snapshot(sample(1, 1)));
+        state.receive(SysinfoMessage::Snapshot(sample(1, 1)));
+
+        assert_eq!(state.process_info[&Pid::from_u32(1)].metrics.len(), 1);
+    }
+
+    #[test]
+    fn disabling_selected_only_retains_history_for_all_processes() {
+        let mut state = SysinfoSharedState::new();
+        state.config.limit_processes_to_selection = false;
+        state.process_selection.select_process(Pid::from_u32(1));
+
+        for _ in 0..2 {
+            let mut snapshot = sample(1, 1);
+            let mut second = snapshot.processes[0].clone();
+            second.pid = PidV(2);
+            snapshot.pids.push(PidV(2));
+            snapshot.processes.push(second);
+            state.receive(SysinfoMessage::Snapshot(snapshot));
+        }
+
+        assert_eq!(state.process_info[&Pid::from_u32(1)].metrics.len(), 2);
+        assert_eq!(state.process_info[&Pid::from_u32(2)].metrics.len(), 2);
+    }
+
+    #[test]
+    fn local_connection_updates_frontend_data_and_acknowledges_intervals() {
+        use crate::gui::{
+            BackendId,
+            backend::{Connection, FrontendGroup, init_frontend_groups},
+        };
+        let cx = egui::Context::default();
+        let groups = init_frontend_groups(&cx);
+        let state = match &groups[&BackendId("sysinfo".into())] {
+            FrontendGroup::Sysinfo(view) => view.state.clone(),
+            _ => unreachable!(),
+        };
+        {
+            let mut data = state.lock();
+            data.config.update_interval = Duration::from_millis(100);
+            data.config.temperature_interval = Duration::from_millis(50);
+        }
+        let connection = Connection::new(cx, &groups);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let data = state.lock();
+            if !data.data.is_empty() && !data.temperatures.is_empty() {
+                assert_eq!(
+                    data.applied_temperature_interval,
+                    Some(Duration::from_millis(50))
+                );
+                break;
             }
+            drop(data);
+            assert!(
+                std::time::Instant::now() < deadline,
+                "frontend did not receive samples"
+            );
+            std::thread::sleep(Duration::from_millis(10));
         }
-        drop(data);
-        cx.request_repaint();
-
-        let mut waited = Duration::from_secs(0);
-        while waited < update_interval {
-            let sleep_duration = update_interval.min(Duration::from_millis(100));
-            std::thread::sleep(sleep_duration);
-            waited += sleep_duration;
-            if state.lock().should_stop {
-                return;
-            }
-        }
+        drop(connection);
     }
 }

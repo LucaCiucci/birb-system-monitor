@@ -12,27 +12,12 @@ description = "A cross-platform system monitoring GUI built with egui and sysinf
 anyhow = "1"
 bollard = "0.21"
 clap = { version = "4", features = ["derive"] }
-#deser-hjson = "2.2.5"
-tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
-eframe = { version = "0.34", default-features = false, features = [
-    "accesskit",
-    "default_fonts",
-    #"ron",
-    #"serde",
-    #"wayland",
-    #"web_screen_reader",
-    #"wgpu",
-    #"wgpu_no_default_features",
-    #"x11",
-
-    "persistence",
-    "glow",
-] }
-egui = "0.34"
-egui_dock = { version = "0.19.1", features = ["serde"] }
-egui_extras = "0.34"
-egui_plot = "=0.35.0"
-egui_table = "0.8.0"
+eframe = { version = "0.36", features = ["persistence"] }
+egui = "0.36"
+egui_dock = { version = "0.21", features = ["serde"] }
+egui_extras = "0.36"
+egui_plot = "0.37"
+egui_table = "0.10"
 fastrand = "2.4.1"
 human-units = "0.5.3"
 itertools = "0.14.0"
@@ -50,6 +35,10 @@ tracing-subscriber = "0.3.23"
 ustr = "1.1.0"
 uuid = { version = "1.23.1", features = ["v4"] }
 ecow = { version = "0.3.1", features = ["serde"] }
+tokio = { version = "1.53", features = ["full"] }
+
+[dev-dependencies]
+tokio = { version = "1.53", features = ["test-util"] }
 
 # Used by cargo-deb
 [package.metadata.deb]

@@ -103,6 +103,7 @@ fn memory_plot(
             let seconds_ago = latest
                 .captured_at
                 .duration_since(snapshot.captured_at)
+                .unwrap()
                 .as_secs_f64();
             [
                 seconds_ago,
@@ -119,6 +120,7 @@ fn memory_plot(
             let seconds_ago = latest
                 .captured_at
                 .duration_since(snapshot.captured_at)
+                .unwrap()
                 .as_secs_f64();
             [
                 seconds_ago,
@@ -178,6 +180,7 @@ fn selected_memory_points(
             let seconds_ago = latest
                 .captured_at
                 .duration_since(snapshot.captured_at)
+                .unwrap()
                 .as_secs_f64();
             let selected_memory = selected_processes
                 .iter()
@@ -202,6 +205,7 @@ fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData, min_windo
             latest
                 .captured_at
                 .duration_since(oldest.captured_at)
+                .unwrap()
                 .as_secs_f64()
                 .max(1.0)
         })

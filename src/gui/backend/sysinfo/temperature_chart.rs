@@ -1,3 +1,4 @@
+use birb_monitor::backend::sysinfo::ComponentsSnapshot as SnapshotData;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -5,10 +6,7 @@ use egui::{Color32, WidgetText, mutex::Mutex};
 use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
 use serde::{Deserialize, Serialize};
 
-use crate::gui::{
-    BackendPanel,
-    backend::sysinfo::{SnapshotData, SysinfoSharedState},
-};
+use crate::gui::{BackendPanel, backend::sysinfo::SysinfoSharedState};
 
 const MIN_TIME_SECONDS: f64 = 0.0;
 const MAX_LEGEND_LEN: usize = 22;
@@ -48,7 +46,7 @@ impl BackendPanel for TemperatureChartPanel {
     fn ui(&mut self, ui: &mut egui::Ui) {
         let data = self.state.lock();
 
-        let Some(latest) = data.data.last() else {
+        let Some(latest) = data.temperatures.last() else {
             ui.label("Loading...");
             return;
         };
@@ -108,10 +106,11 @@ impl BackendPanel for TemperatureChartPanel {
         });
 
         let plot_height = ui.available_height().clamp(100.0, 600.0);
-        let min_window = data.config.min_plot_window_secs();
+        let min_window =
+            data.config.temperature_interval.as_secs_f64() * data.config.max_readings as f64;
         temperature_plot(
             ui,
-            &data.data,
+            &data.temperatures,
             &self.config.enabled,
             plot_height,
             min_window,
@@ -213,6 +212,7 @@ fn temperature_plot(
                     let seconds_ago = latest
                         .captured_at
                         .duration_since(snapshot.captured_at)
+                        .unwrap()
                         .as_secs_f64();
                     let temp = snapshot
                         .component_stats
@@ -255,6 +255,7 @@ fn max_time_seconds(snapshots: &[SnapshotData], latest: &SnapshotData, min_windo
             latest
                 .captured_at
                 .duration_since(oldest.captured_at)
+                .unwrap()
                 .as_secs_f64()
                 .max(1.0)
         })

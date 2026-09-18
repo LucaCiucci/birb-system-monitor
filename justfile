@@ -51,3 +51,7 @@ check-clippy:
 check-unused-deps:
     cargo +nightly udeps
     cargo machete
+
+send-to WHERE:
+    cross build --release
+    scp -C target/x86_64-unknown-linux-gnu/release/birb-monitor {{WHERE}}

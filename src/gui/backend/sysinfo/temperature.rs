@@ -22,12 +22,15 @@ impl BackendPanel for TemperaturePanel {
     fn ui(&mut self, ui: &mut egui::Ui) {
         let data = self.state.lock();
 
-        let Some(latest) = data.data.last() else {
+        let Some(latest) = data.temperatures.last() else {
             ui.label("Loading...");
             return;
         };
 
         let components = &latest.component_stats.components;
+        if let Some(interval) = data.applied_temperature_interval {
+            ui.label(format!("Polling every {:.2} s", interval.as_secs_f32()));
+        }
 
         if components.is_empty() {
             ui.label("No temperature sensors detected.");
@@ -101,12 +104,12 @@ impl BackendPanel for TemperaturePanel {
             let mut config = data.config.clone();
             ui.horizontal(|ui| {
                 ui.label("Update interval:");
-                let mut interval_secs = config.update_interval.as_secs_f32();
+                let mut interval_secs = config.temperature_interval.as_secs_f32();
                 if ui
                     .add(egui::Slider::new(&mut interval_secs, 0.05..=5.0).logarithmic(true))
                     .changed()
                 {
-                    config.update_interval = Duration::from_secs_f32(interval_secs);
+                    config.temperature_interval = Duration::from_secs_f32(interval_secs);
                 }
             });
             if config != data.config {
