@@ -79,7 +79,20 @@ pub const CLAP_STYLES: Styles = Styles::styled()
 
 
 pub fn init_logging() {
-    tracing_subscriber::fmt()
+    use tracing::{Level, level_filters::LevelFilter};
+    use tracing_subscriber::{
+        Layer, filter::Targets, layer::SubscriberExt, util::SubscriberInitExt,
+    };
+
+    let targets = Targets::new()
+        .with_default(LevelFilter::INFO)
+        .with_target("egui_wgpu", Level::WARN)
+        .with_target("wgpu_hal", Level::WARN)
+        .with_target("sctk_adwaita", Level::ERROR);
+
+    let layer = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
-        .init();
+        .with_filter(targets);
+
+    tracing_subscriber::registry().with(layer).init();
 }
