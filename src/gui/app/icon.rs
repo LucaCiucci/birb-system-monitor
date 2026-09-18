@@ -1,4 +1,3 @@
-
 // TODO build at compile time using resvg, see <https://github.com/linebender/resvg/blob/main/crates/resvg/examples/minimal.rs>
 pub fn make_icon() -> egui::IconData {
     let size = 32;

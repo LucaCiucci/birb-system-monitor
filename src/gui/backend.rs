@@ -115,8 +115,7 @@ impl Connection {
     ) -> anyhow::Result<Self> {
         let (transport, commands, mut messages) = match host {
             Some(host) => {
-                let (remote, commands, messages) =
-                    crate::transport::Remote::ssh(host, ssh_bin)?;
+                let (remote, commands, messages) = crate::transport::Remote::ssh(host, ssh_bin)?;
                 (Transport::Ssh(remote), commands, messages)
             }
             None => {

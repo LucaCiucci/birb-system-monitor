@@ -211,11 +211,7 @@ impl SnapshotData {
             .without_cpu()
             .without_memory();
         if include_all_details {
-            sys.refresh_processes_specifics(
-                ProcessesToUpdate::All,
-                false,
-                detail_refresh_kind,
-            );
+            sys.refresh_processes_specifics(ProcessesToUpdate::All, false, detail_refresh_kind);
         } else if !selected_pids.is_empty() {
             sys.refresh_processes_specifics(
                 ProcessesToUpdate::Some(&selected_pids),

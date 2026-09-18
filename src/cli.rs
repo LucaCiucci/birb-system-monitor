@@ -1,4 +1,7 @@
-use clap::{Parser, builder::{Styles, styling::AnsiColor}};
+use clap::{
+    Parser,
+    builder::{Styles, styling::AnsiColor},
+};
 
 /// Birb System Monitor
 ///
@@ -76,7 +79,6 @@ pub const CLAP_STYLES: Styles = Styles::styled()
     .usage(AnsiColor::Green.on_default().bold())
     .literal(AnsiColor::BrightCyan.on_default().bold())
     .placeholder(AnsiColor::Cyan.on_default());
-
 
 pub fn init_logging() {
     use tracing::{Level, level_filters::LevelFilter};
