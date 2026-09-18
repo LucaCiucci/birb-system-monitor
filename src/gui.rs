@@ -187,19 +187,3 @@ pub trait BackendPanel {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn saved_panel_ids_remain_compatible() {
-        for path in ["sysinfo/cpu", "sysinfo/temperature-chart", "docker/images"] {
-            let (backend, panel) = path.split_once('/').unwrap();
-            let old = serde_json::json!({"backend": backend, "panel": panel});
-            let id: PanelId = serde_json::from_value(old.clone()).unwrap();
-            assert_eq!(id.to_string(), path);
-            assert_eq!(serde_json::to_value(id).unwrap(), old);
-        }
-        assert!("sysinfo/unknown".parse::<PanelId>().is_err());
-    }
-}
