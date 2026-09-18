@@ -204,19 +204,23 @@ impl SnapshotData {
             ProcessRefreshKind::nothing().with_cpu().with_memory(),
         );
         // Expensive fields (command line, environment, paths, identities, and disk I/O)
-        // are refreshed only for selected processes. When nothing is selected, retain
-        // only the lightweight process-list data.
+        // are refreshed only for selected processes. CPU and memory are deliberately
+        // excluded: refreshing them again here would make sysinfo calculate CPU usage
+        // over the tiny interval since the process-list refresh above.
+        let detail_refresh_kind = ProcessRefreshKind::everything()
+            .without_cpu()
+            .without_memory();
         if include_all_details {
             sys.refresh_processes_specifics(
                 ProcessesToUpdate::All,
                 false,
-                ProcessRefreshKind::everything(),
+                detail_refresh_kind,
             );
         } else if !selected_pids.is_empty() {
             sys.refresh_processes_specifics(
                 ProcessesToUpdate::Some(&selected_pids),
                 false,
-                ProcessRefreshKind::everything(),
+                detail_refresh_kind,
             );
         }
         Self {
