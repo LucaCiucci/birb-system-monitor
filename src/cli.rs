@@ -3,6 +3,8 @@ use clap::{
     builder::{Styles, styling::AnsiColor},
 };
 
+use crate::logging::LogOptions;
+
 /// Birb System Monitor
 ///
 /// A cross-platform system monitoring tool with a focus on aesthetics and usability.
@@ -11,11 +13,23 @@ use clap::{
 #[derive(Clone, Parser)]
 #[clap(styles = CLAP_STYLES)]
 pub struct Cli {
+    #[clap(flatten)]
+    pub log: LogOptions,
+
     #[clap(subcommand)]
     pub command: Option<Command>,
 }
 
 impl Cli {
+    pub fn main(self) -> anyhow::Result<()> {
+        self.setup_logging();
+        self.command().run()
+    }
+
+    pub fn setup_logging(&self) {
+        crate::logging::init(&self.log);
+    }
+
     pub fn command(&self) -> Command {
         self.command.clone().unwrap_or(Command::Gui(Gui {
             detach: true,

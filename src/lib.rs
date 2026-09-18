@@ -5,3 +5,5 @@ pub mod logging;
 pub mod message;
 pub mod transport;
 pub mod utils;
+
+pub use cli::Cli;
