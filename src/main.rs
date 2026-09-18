@@ -1,8 +1,8 @@
-use birb_monitor::cli::{Cli, init_logging};
+use birb_monitor::cli::Cli;
 use clap::Parser;
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    init_logging();
+    birb_monitor::logging::init();
     cli.command().run()
 }
