@@ -1,5 +1,5 @@
 use super::{BackendId, BackendPanel, BackendPanelId, BackendPanelInfo};
-use birb_monitor::{
+use crate::{
     backend::Systems,
     backend::docker::DockerCommand,
     backend::sysinfo::{PidV, SysinfoCommand},
@@ -89,7 +89,7 @@ pub struct ConnectionStatus {
 
 enum Transport {
     Local(Systems),
-    Ssh(birb_monitor::transport::Remote),
+    Ssh(crate::transport::Remote),
 }
 
 impl Transport {
@@ -116,7 +116,7 @@ impl Connection {
         let (transport, commands, mut messages) = match host {
             Some(host) => {
                 let (remote, commands, messages) =
-                    birb_monitor::transport::Remote::ssh(host, ssh_bin)?;
+                    crate::transport::Remote::ssh(host, ssh_bin)?;
                 (Transport::Ssh(remote), commands, messages)
             }
             None => {

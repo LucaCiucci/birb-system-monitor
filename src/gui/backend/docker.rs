@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::SystemTime};
 
-use birb_monitor::backend::docker::{DockerMessage, SimpleContainer, SimpleImage};
+use crate::backend::docker::{DockerMessage, SimpleContainer, SimpleImage};
 use egui::{WidgetText, mutex::Mutex};
 use serde::{Deserialize, Serialize};
 

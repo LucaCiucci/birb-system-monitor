@@ -5,7 +5,7 @@ pub mod backend;
 use ecow::EcoString;
 use egui::{Ui, WidgetText};
 use serde::{Deserialize, Serialize};
-pub mod gui_main;
+pub mod app;
 pub mod save;
 pub mod tabs;
 pub mod widgets;

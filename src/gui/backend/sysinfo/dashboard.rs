@@ -1,4 +1,4 @@
-use birb_monitor::backend::sysinfo::ComponentsSnapshot;
+use crate::backend::sysinfo::ComponentsSnapshot;
 use std::{collections::HashMap, collections::HashSet, sync::Arc};
 
 use egui::{Color32, ProgressBar, Stroke, Ui, WidgetText, mutex::Mutex};

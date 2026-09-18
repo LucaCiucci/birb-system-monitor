@@ -1,4 +1,4 @@
-use birb_monitor::backend::sysinfo::ComponentsSnapshot as SnapshotData;
+use crate::backend::sysinfo::ComponentsSnapshot as SnapshotData;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 

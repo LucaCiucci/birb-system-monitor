@@ -4,8 +4,8 @@ use std::{
     time::Duration,
 };
 
-pub(super) use birb_monitor::backend::sysinfo::SnapshotData;
-use birb_monitor::backend::sysinfo::{
+pub(super) use crate::backend::sysinfo::SnapshotData;
+use crate::backend::sysinfo::{
     ComponentsSnapshot, ProcessDiskUsage, ProcessSnapshot, SysinfoMessage,
 };
 use egui::{WidgetText, mutex::Mutex};
@@ -392,7 +392,7 @@ impl SysinfoSharedState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use birb_monitor::backend::sysinfo::{
+    use crate::backend::sysinfo::{
         ComponentStats, CpuStats, DiskIoStats, GeneralStats, NetworkStats, PidV,
     };
 
