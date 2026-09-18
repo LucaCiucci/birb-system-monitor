@@ -5,16 +5,10 @@ default:
     @exit 1
 
 # Create all Linux packages
-package-linux: package-deb flatpak appimage
+package-linux: cross-debs flatpak appimage
 
-# Build a .deb package using cargo-deb
-package-deb:
-    cargo deb
-    mkdir -p dist
-    cp target/debian/birb-monitor_*.deb dist/
-
-install-deb: package-deb
-    sudo dpkg -i dist/birb-monitor_*.deb
+install-deb: cross-debs
+    sudo dpkg -i target/debian/birb-monitor_*amd64.deb
 
 uninstall-deb:
     sudo dpkg -r birb-monitor
@@ -52,6 +46,19 @@ check-unused-deps:
     cargo +nightly udeps
     cargo machete
 
-send-to WHERE:
-    cross build --release
-    scp -C target/x86_64-unknown-linux-gnu/release/birb-monitor {{WHERE}}
+cross-debs: (cross-deb "x86_64-unknown-linux-gnu") (cross-deb "aarch64-unknown-linux-gnu")
+
+cross-deb TARGET: (cross-build-for TARGET) install-cargo-deb
+    cargo deb --no-build --target {{TARGET}}
+
+# x86_64-unknown-linux-gnu
+cross-build-for TARGET: install-cargo-cross
+    cross build --release --target {{TARGET}}
+
+install-dist-tools: install-cargo-deb install-cargo-cross
+
+install-cargo-deb:
+    cargo install cargo-deb --version 3.8.0 --locked
+
+install-cargo-cross:
+    cargo install cargo-cross --version 1.6.0 --locked
