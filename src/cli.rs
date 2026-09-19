@@ -1,5 +1,5 @@
 use clap::{
-    Parser,
+    CommandFactory, Parser,
     builder::{Styles, styling::AnsiColor},
 };
 
@@ -47,6 +47,8 @@ pub enum Command {
         #[clap(long, required = true)]
         stdio: bool,
     },
+    #[clap(subcommand)]
+    Doc(Doc),
 }
 
 impl Command {
@@ -54,6 +56,7 @@ impl Command {
         match self {
             Command::Gui(gui) => gui.run(),
             Command::Backend { .. } => crate::transport::serve_stdio(),
+            Command::Doc(doc) => doc.run(),
         }
     }
 }
@@ -84,6 +87,25 @@ impl Gui {
             }
             child.spawn()?;
             Ok(())
+        }
+    }
+}
+
+#[derive(Clone, Parser)]
+pub enum Doc {
+    /// Generate man documentation for the system monitor.
+    Man { out_dir: String },
+}
+
+impl Doc {
+    pub fn run(&self) -> anyhow::Result<()> {
+        match self {
+            Doc::Man { out_dir } => {
+                let command = <Cli as CommandFactory>::command();
+                let man = clap_mangen::Man::new(command);
+                man.generate_to(out_dir)?;
+                Ok(())
+            }
         }
     }
 }

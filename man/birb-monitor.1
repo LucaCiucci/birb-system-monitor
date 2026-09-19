@@ -1,0 +1,36 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH birb-monitor 1  "birb-monitor " 
+.SH NAME
+birb\-monitor \- Birb System Monitor
+.SH SYNOPSIS
+\fBbirb\-monitor\fR [\fB\-\-log\-level\fR] [\fB\-\-filter\-log\-target\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIsubcommands\fR]
+.SH DESCRIPTION
+Birb System Monitor
+.PP
+A cross\-platform system monitoring tool with a focus on aesthetics and usability.
+.PP
+If no command is provided, defaults to `gui \-\-detach`.
+.SH OPTIONS
+.TP
+\fB\-\-log\-level\fR \fI<LOG_LEVEL>\fR [default: info]
+The logging level to use
+.TP
+\fB\-\-filter\-log\-target\fR \fI<TARGET[=LEVEL]>\fR
+Filters specific logging targets.
+
+If no level is specified, the target will be disabled.
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help (see a summary with \*(Aq\-h\*(Aq)
+.SH SUBCOMMANDS
+.TP
+birb\-monitor\-gui(1)
+.TP
+birb\-monitor\-backend(1)
+Run an attached backend using versioned JSON Lines on stdin/stdout
+.TP
+birb\-monitor\-doc(1)
+.TP
+birb\-monitor\-help(1)
+Print this message or the help of the given subcommand(s)

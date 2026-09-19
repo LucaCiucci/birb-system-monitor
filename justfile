@@ -62,3 +62,7 @@ install-cargo-deb:
 
 install-cargo-cross:
     cargo install cargo-cross --version 1.6.0 --locked
+
+update-man:
+    mkdir -p man
+    cargo run -- doc man man/
