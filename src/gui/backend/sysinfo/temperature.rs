@@ -1,16 +1,14 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use egui::{Color32, Grid, ProgressBar, WidgetText, mutex::Mutex};
+use egui::{Color32, Grid, ProgressBar, WidgetText};
 
-use crate::gui::{Panel, backend::sysinfo::SysinfoSharedState};
+use crate::gui::{Panel, app::state::FrontendState};
 
-pub(super) struct TemperaturePanel {
-    state: Arc<Mutex<SysinfoSharedState>>,
-}
+pub(super) struct TemperaturePanel;
 
 impl TemperaturePanel {
-    pub(super) fn new(state: Arc<Mutex<SysinfoSharedState>>) -> Self {
-        Self { state }
+    pub(super) fn new() -> Self {
+        Self
     }
 }
 
@@ -19,8 +17,8 @@ impl Panel for TemperaturePanel {
         "Temperatures".into()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui) {
-        let data = self.state.lock();
+    fn ui(&mut self, data: &mut FrontendState, ui: &mut egui::Ui) {
+        let data = &mut data.sysinfo.state;
 
         let Some(latest) = data.temperatures.last() else {
             ui.label("Loading...");
@@ -113,8 +111,7 @@ impl Panel for TemperaturePanel {
                 }
             });
             if config != data.config {
-                drop(data);
-                self.state.lock().config = config;
+                data.config = config;
             }
         });
     }

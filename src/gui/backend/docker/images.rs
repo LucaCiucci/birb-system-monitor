@@ -1,20 +1,12 @@
-use std::sync::Arc;
+use egui::{Color32, Grid, Ui, WidgetText};
 
-use egui::{Color32, Grid, Ui, WidgetText, mutex::Mutex};
+use crate::gui::{Panel, app::state::FrontendState};
 
-use crate::gui::{Panel, backend::docker::DockerSharedState};
-
-pub struct ImagesPanel {
-    state: Arc<Mutex<DockerSharedState>>,
-}
+pub struct ImagesPanel;
 
 impl ImagesPanel {
-    pub fn new(state: Arc<Mutex<DockerSharedState>>) -> Self {
-        Self { state }
-    }
-
-    fn data(&self) -> egui::mutex::MutexGuard<'_, DockerSharedState> {
-        self.state.lock()
+    pub fn new() -> Self {
+        Self
     }
 }
 
@@ -38,8 +30,8 @@ impl Panel for ImagesPanel {
         "Images".into()
     }
 
-    fn ui(&mut self, ui: &mut Ui) {
-        let data = self.data();
+    fn ui(&mut self, data: &mut FrontendState, ui: &mut Ui) {
+        let data = &data.docker.state;
 
         if let Some(ref err) = data.state.images_error {
             ui.colored_label(Color32::LIGHT_RED, format!("⚠ {err}"));

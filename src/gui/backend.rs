@@ -1,26 +1,17 @@
-use super::{Panel, panels::PanelId};
+use crate::gui::app::state::FrontendState;
 use crate::{
     backend::Systems,
     backend::docker::DockerCommand,
     backend::sysinfo::{PidV, SysinfoCommand},
     message::{Command, Message, SystemId},
 };
-use egui::{Context, mutex::Mutex};
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
-    thread::JoinHandle,
     time::Duration,
 };
 
 pub mod docker;
 pub mod sysinfo;
-
-/// Display data and preferences for both domains; collectors live in Systems.
-pub struct FrontendState {
-    pub sysinfo: sysinfo::SysinfoFrontend,
-    pub docker: docker::DockerFrontend,
-}
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -29,53 +20,15 @@ pub struct FrontendConfig {
     pub docker: docker::DockerConfig,
 }
 
-impl FrontendState {
-    pub fn new() -> Self {
-        Self {
-            sysinfo: sysinfo::SysinfoFrontend::new(),
-            docker: docker::DockerFrontend::new(),
-        }
-    }
-
-    pub fn config(&self) -> FrontendConfig {
-        FrontendConfig {
-            sysinfo: self.sysinfo.state.lock().config.clone(),
-            docker: self.docker.state.lock().config.clone(),
-        }
-    }
-
-    pub fn apply_config(&self, config: &FrontendConfig) {
-        self.sysinfo.state.lock().config = config.sysinfo.clone();
-        self.docker.state.lock().config = config.docker.clone();
-    }
-
-    pub fn new_panel(&self, id: &PanelId) -> Box<dyn Panel> {
-        match id {
-            PanelId::Containers | PanelId::Images => self.docker.new_panel(id),
-            PanelId::Cpu
-            | PanelId::Memory
-            | PanelId::Processes
-            | PanelId::SelectedProcess
-            | PanelId::Network
-            | PanelId::DiskIo
-            | PanelId::Dashboard
-            | PanelId::Settings
-            | PanelId::Temperature
-            | PanelId::TemperatureChart => self.sysinfo.new_panel(id),
-        }
-    }
-}
-
-/// Frontend adapter: receives backend messages, maintains display data, and
-/// wakes egui. The backend sees only the two channel endpoints.
+/// Frontend adapter: applies backend messages when polled by the app. The backend sees only the two channel endpoints.
 pub struct Connection {
     transport: Transport,
     commands: tokio::sync::mpsc::Sender<Command>,
-    receiver: Option<JoinHandle<()>>,
+    messages: tokio::sync::mpsc::Receiver<Message>,
     sent: HashMap<SystemId, Duration>,
     process_detail_selection: Option<(HashSet<PidV>, bool)>,
     socket: Option<String>,
-    pub status: Arc<Mutex<ConnectionStatus>>,
+    pub status: ConnectionStatus,
 }
 
 #[derive(Default)]
@@ -100,18 +53,12 @@ impl Transport {
 }
 
 impl Connection {
-    #[cfg(test)]
-    pub fn new(cx: Context, frontend: &FrontendState) -> Self {
-        Self::connect(cx, frontend, None, "birb-monitor").expect("Failed to start backend")
-    }
-
     pub fn connect(
-        cx: Context,
         frontend: &FrontendState,
         host: Option<&str>,
         ssh_bin: &str,
     ) -> anyhow::Result<Self> {
-        let (transport, commands, mut messages) = match host {
+        let (transport, commands, messages) = match host {
             Some(host) => {
                 let (remote, commands, messages) = crate::transport::Remote::ssh(host, ssh_bin)?;
                 (Transport::Ssh(remote), commands, messages)
@@ -121,53 +68,56 @@ impl Connection {
                 (Transport::Local(systems), commands, messages)
             }
         };
-        let sysinfo = frontend.sysinfo.state.clone();
-        let docker = frontend.docker.state.clone();
-        let status = Arc::new(Mutex::new(ConnectionStatus::default()));
-        let received_status = status.clone();
-        let receiver = std::thread::spawn(move || {
-            while let Some(message) = messages.blocking_recv() {
-                match message {
-                    Message::Sysinfo(value) => sysinfo.lock().receive(value),
-                    Message::Docker(value) => docker.lock().receive(value),
-                    Message::IntervalChanged { target, interval } => {
-                        match target {
-                            SystemId::System => {
-                                sysinfo.lock().applied_update_interval = Some(interval)
-                            }
-                            SystemId::Components => {
-                                sysinfo.lock().applied_temperature_interval = Some(interval)
-                            }
-                            SystemId::Docker => {}
-                        }
-                        received_status.lock().intervals.insert(target, interval);
-                    }
-                    Message::CommandError(error) => received_status.lock().error = Some(error),
-                }
-                cx.request_repaint();
-            }
-            received_status.lock().disconnected = true;
-            cx.request_repaint();
-        });
         let mut result = Self {
             transport,
             commands,
-            receiver: Some(receiver),
+            messages,
             sent: HashMap::new(),
             process_detail_selection: None,
             socket: None,
-            status,
+            status: ConnectionStatus::default(),
         };
         result.sync_config(frontend);
         Ok(result)
     }
 
+    /// Apply messages on the UI thread before panels borrow the state.
+    /// Limit each batch so a busy backend cannot starve rendering.
+    pub fn receive(&mut self, frontend: &mut FrontendState) {
+        for _ in 0..64 {
+            match self.messages.try_recv() {
+                Ok(message) => match message {
+                    Message::Sysinfo(value) => frontend.sysinfo.state.receive(value),
+                    Message::Docker(value) => frontend.docker.state.receive(value),
+                    Message::IntervalChanged { target, interval } => {
+                        match target {
+                            SystemId::System => {
+                                frontend.sysinfo.state.applied_update_interval = Some(interval)
+                            }
+                            SystemId::Components => {
+                                frontend.sysinfo.state.applied_temperature_interval = Some(interval)
+                            }
+                            SystemId::Docker => {}
+                        }
+                        self.status.intervals.insert(target, interval);
+                    }
+                    Message::CommandError(error) => self.status.error = Some(error),
+                },
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                    self.status.disconnected = true;
+                    break;
+                }
+            }
+        }
+    }
+
     pub fn sync_config(&mut self, frontend: &FrontendState) {
-        if self.status.lock().disconnected {
+        if self.status.disconnected {
             return;
         }
         let (config, selected_processes) = {
-            let state = frontend.sysinfo.state.lock();
+            let state = &frontend.sysinfo.state;
             (
                 state.config.clone(),
                 state
@@ -190,7 +140,7 @@ impl Connection {
         {
             self.process_detail_selection = Some(detail_selection);
         }
-        let docker = frontend.docker.state.lock().config.clone();
+        let docker = frontend.docker.state.config.clone();
         if self.socket.as_ref() != Some(&docker.socket_path)
             && self
                 .commands
@@ -223,9 +173,8 @@ impl Connection {
 
 impl Drop for Connection {
     fn drop(&mut self) {
+        // Unblock pending sends before waiting for the backend to stop.
+        self.messages.close();
         self.transport.shutdown();
-        if let Some(receiver) = self.receiver.take() {
-            let _ = receiver.join();
-        }
     }
 }

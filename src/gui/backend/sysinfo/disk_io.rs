@@ -1,23 +1,16 @@
-use std::sync::Arc;
-
-use egui::{Color32, WidgetText, mutex::Mutex};
+use egui::{Color32, WidgetText};
 use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
 use human_units::FormatSize;
 
-use crate::gui::{
-    Panel,
-    backend::sysinfo::{SnapshotData, SysinfoSharedState},
-};
+use crate::gui::{Panel, app::state::FrontendState, backend::sysinfo::SnapshotData};
 
 const MIN_TIME_SECONDS: f64 = 0.0;
 
-pub(super) struct DiskIoPanel {
-    state: Arc<Mutex<SysinfoSharedState>>,
-}
+pub(super) struct DiskIoPanel;
 
 impl DiskIoPanel {
-    pub(super) fn new(state: Arc<Mutex<SysinfoSharedState>>) -> Self {
-        Self { state }
+    pub(super) fn new() -> Self {
+        Self
     }
 }
 
@@ -26,8 +19,8 @@ impl Panel for DiskIoPanel {
         "Disk I/O".into()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui) {
-        let data = self.state.lock();
+    fn ui(&mut self, data: &mut FrontendState, ui: &mut egui::Ui) {
+        let data = &data.sysinfo.state;
 
         if let Some(data_latest) = data.data.last() {
             // Current totals

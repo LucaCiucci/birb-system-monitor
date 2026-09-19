@@ -1,19 +1,14 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use egui::{Checkbox, Grid, WidgetText, mutex::Mutex};
+use egui::{Checkbox, Grid, WidgetText};
 
-use crate::gui::{
-    Panel,
-    backend::sysinfo::{SysinfoConfig, SysinfoSharedState},
-};
+use crate::gui::{Panel, app::state::FrontendState, backend::sysinfo::SysinfoConfig};
 
-pub(super) struct SettingsPanel {
-    state: Arc<Mutex<SysinfoSharedState>>,
-}
+pub(super) struct SettingsPanel;
 
 impl SettingsPanel {
-    pub(super) fn new(state: Arc<Mutex<SysinfoSharedState>>) -> Self {
-        Self { state }
+    pub(super) fn new() -> Self {
+        Self
     }
 }
 
@@ -22,8 +17,8 @@ impl Panel for SettingsPanel {
         "Sysinfo Settings".into()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui) {
-        let data = self.state.lock();
+    fn ui(&mut self, data: &mut FrontendState, ui: &mut egui::Ui) {
+        let data = &mut data.sysinfo.state;
 
         ui.heading("Sysinfo Backend Settings");
         ui.separator();
@@ -92,8 +87,7 @@ impl Panel for SettingsPanel {
         };
 
         if new_config != config {
-            drop(data);
-            self.state.lock().config = new_config;
+            data.config = new_config;
         }
 
         ui.separator();

@@ -1,8 +1,6 @@
-use std::{ops::Not, sync::Arc};
+use std::ops::Not;
 
-use egui::{
-    Button, Checkbox, Color32, ComboBox, RichText, Sense, Ui, Vec2, WidgetText, mutex::Mutex,
-};
+use egui::{Button, Checkbox, Color32, ComboBox, RichText, Sense, Ui, Vec2, WidgetText};
 use egui_table::{
     AutoSizeMode, CellInfo, HeaderCellInfo, HeaderRow, Table, TableDelegate, columns::Column,
 };
@@ -12,10 +10,7 @@ use sysinfo::Pid;
 
 use std::collections::{HashMap, HashSet};
 
-use crate::gui::{
-    Panel,
-    backend::sysinfo::{ProcessInfo, SysinfoSharedState},
-};
+use crate::gui::{Panel, app::state::FrontendState, backend::sysinfo::ProcessInfo};
 
 /// Whether the process list is live, pinned (frozen PID list), or paused (frozen snapshot).
 enum FreezeState {
@@ -28,7 +23,6 @@ enum FreezeState {
 
 pub(super) struct ProcessesPanel {
     config: Config,
-    state: Arc<Mutex<SysinfoSharedState>>,
     freeze: FreezeState,
 }
 
@@ -61,10 +55,9 @@ impl Default for Config {
 }
 
 impl ProcessesPanel {
-    pub fn new(state: Arc<Mutex<SysinfoSharedState>>) -> Self {
+    pub fn new() -> Self {
         Self {
             config: Config::default(),
-            state,
             freeze: FreezeState::Live,
         }
     }
@@ -73,14 +66,13 @@ impl ProcessesPanel {
         matches!(self.freeze, FreezeState::Live)
     }
 
-    fn freeze_pause(&mut self) {
-        let info = self.state.lock().process_info.clone();
+    fn freeze_pause(&mut self, data: &FrontendState) {
+        let info = data.sysinfo.state.process_info.clone();
         self.freeze = FreezeState::Pause(info);
     }
 
-    fn freeze_pin(&mut self) {
-        let state = self.state.lock();
-        let pids = self.list_pids(&state.process_info);
+    fn freeze_pin(&mut self, data: &FrontendState) {
+        let pids = self.list_pids(&data.sysinfo.state.process_info);
         self.freeze = FreezeState::Pin(pids);
     }
 }
@@ -90,8 +82,8 @@ impl Panel for ProcessesPanel {
         "Processes".into()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui) {
-        let has_data = self.state.lock().data.last().is_some();
+    fn ui(&mut self, data: &mut FrontendState, ui: &mut egui::Ui) {
+        let has_data = data.sysinfo.state.data.last().is_some();
         if !has_data {
             ui.label("Loading...");
             return;
@@ -113,7 +105,7 @@ impl Panel for ProcessesPanel {
                 if is_pinned {
                     self.freeze = FreezeState::Live;
                 } else {
-                    self.freeze_pin();
+                    self.freeze_pin(data);
                 }
             }
             // Pause — freezes everything
@@ -127,14 +119,14 @@ impl Panel for ProcessesPanel {
                 if is_paused {
                     self.freeze = FreezeState::Live;
                 } else {
-                    self.freeze_pause();
+                    self.freeze_pause(data);
                 }
             }
             if is_paused && ui.button("Refresh").clicked() {
-                self.freeze_pause();
+                self.freeze_pause(data);
             }
             if is_pinned && ui.button("Refresh").clicked() {
-                self.freeze_pin();
+                self.freeze_pin(data);
             }
         });
 
@@ -143,7 +135,7 @@ impl Panel for ProcessesPanel {
         let (pids, depth_map, selected) = match &self.freeze {
             FreezeState::Pin(frozen_pids) => {
                 // Frozen PID list + frozen sort order. Only filter out dead processes.
-                let state = self.state.lock();
+                let state = &data.sysinfo.state;
                 let alive: HashSet<Pid> = state.process_info.keys().copied().collect();
                 let mut pids: Vec<Pid> = frozen_pids
                     .iter()
@@ -163,7 +155,7 @@ impl Panel for ProcessesPanel {
                 (pids, depth_map, selected)
             }
             FreezeState::Live => {
-                let mut state = self.state.lock();
+                let state = &mut data.sysinfo.state;
                 let existing_pids: HashSet<Pid> = state.process_info.keys().copied().collect();
                 state.process_selection.retain_existing_pids(&existing_pids);
                 process_count = state.process_info.len();
@@ -178,19 +170,19 @@ impl Panel for ProcessesPanel {
         ui.horizontal(|ui| {
             ui.add(Checkbox::new(&mut self.config.show_threads, "Show threads"));
             ui.add(Checkbox::new(&mut self.config.tree_view, "Tree view"));
-            let mut ms = self.state.lock().process_selection.multiple_selection;
+            let mut ms = data.sysinfo.state.process_selection.multiple_selection;
             if ui
                 .add(Checkbox::new(&mut ms, "Multiple selection"))
                 .changed()
             {
-                let mut state = self.state.lock();
+                let state = &mut data.sysinfo.state;
                 state.process_selection.multiple_selection = ms;
                 if !ms {
                     state.process_selection.retain_single_selection();
                 }
             }
             if ui.button("Clear selection").clicked() {
-                self.state.lock().process_selection.clear();
+                data.sysinfo.state.process_selection.clear();
             }
             ui.label(format!("{} selected", selected.len()));
         });
@@ -233,7 +225,6 @@ impl Panel for ProcessesPanel {
         });
 
         // --- Table ---
-        let state_arc = self.state.clone();
         let clicked_pid = match &self.freeze {
             FreezeState::Pause(_) => {
                 // Take, use, and restore to avoid borrow conflict
@@ -249,14 +240,14 @@ impl Panel for ProcessesPanel {
             }
             _ => {
                 // Live or Pin: read live data from state
-                let state = state_arc.lock();
+                let state = &data.sysinfo.state;
                 self.table(&state.process_info, ui, &pids, &selected, &depth_map)
             }
         };
         if let Some(clicked_pid) = clicked_pid {
             if self.is_live() {
-                let s = self.state.clone();
-                s.lock().process_selection.select_process(clicked_pid);
+                let s = &mut data.sysinfo.state;
+                s.process_selection.select_process(clicked_pid);
             }
         }
     }

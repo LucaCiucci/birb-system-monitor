@@ -1,7 +1,7 @@
-use std::{sync::Arc, time::SystemTime};
+use std::time::SystemTime;
 
 use crate::backend::docker::{DockerMessage, SimpleContainer, SimpleImage};
-use egui::{WidgetText, mutex::Mutex};
+use egui::WidgetText;
 use serde::{Deserialize, Serialize};
 
 use crate::gui::{
@@ -41,13 +41,13 @@ pub(super) struct DockerState {
 }
 
 pub struct DockerFrontend {
-    pub(super) state: Arc<Mutex<DockerSharedState>>,
+    pub(crate) state: DockerSharedState,
 }
 
 impl DockerFrontend {
     pub fn new() -> Self {
         Self {
-            state: Arc::new(Mutex::new(DockerSharedState::new())),
+            state: DockerSharedState::new(),
         }
     }
 }
@@ -74,16 +74,16 @@ impl DockerFrontend {
 
     pub fn new_panel(&self, panel_id: &PanelId) -> Box<dyn Panel> {
         match panel_id {
-            PanelId::Containers => Box::new(ContainersPanel::new(self.state.clone())),
-            PanelId::Images => Box::new(ImagesPanel::new(self.state.clone())),
+            PanelId::Containers => Box::new(ContainersPanel::new()),
+            PanelId::Images => Box::new(ImagesPanel::new()),
             _ => panic!("Unknown panel id: {}", panel_id),
         }
     }
 }
 
-pub(super) struct DockerSharedState {
+pub(crate) struct DockerSharedState {
     pub config: DockerConfig,
-    pub state: DockerState,
+    pub(super) state: DockerState,
 }
 
 impl DockerSharedState {

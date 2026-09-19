@@ -1,13 +1,14 @@
-use std::{collections::HashMap, collections::HashSet, sync::Arc};
+use std::{collections::HashMap, collections::HashSet};
 
-use egui::{Color32, Grid, ProgressBar, Stroke, WidgetText, mutex::Mutex};
+use egui::{Color32, Grid, ProgressBar, Stroke, WidgetText};
 use egui_plot::{AxisHints, Corner, FilledArea, Legend, Line, Plot, PlotPoints};
 use serde::{Deserialize, Serialize};
 use sysinfo::Pid;
 
 use crate::gui::{
     Panel,
-    backend::sysinfo::{ProcessInfo, SnapshotData, SysinfoSharedState},
+    app::state::FrontendState,
+    backend::sysinfo::{ProcessInfo, SnapshotData},
 };
 
 const MIN_USAGE_PERCENT: f64 = 0.0;
@@ -26,14 +27,12 @@ impl Default for CpuPanelConfig {
 }
 
 pub(super) struct CpuPanel {
-    state: Arc<Mutex<SysinfoSharedState>>,
     config: CpuPanelConfig,
 }
 
 impl CpuPanel {
-    pub(super) fn new(state: Arc<Mutex<SysinfoSharedState>>) -> Self {
+    pub(super) fn new() -> Self {
         Self {
-            state,
             config: CpuPanelConfig::default(),
         }
     }
@@ -44,8 +43,8 @@ impl Panel for CpuPanel {
         "CPU".into()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui) {
-        let data = self.state.lock();
+    fn ui(&mut self, data: &mut FrontendState, ui: &mut egui::Ui) {
+        let data = &data.sysinfo.state;
 
         let Some(latest) = data.data.last() else {
             ui.label("Loading...");

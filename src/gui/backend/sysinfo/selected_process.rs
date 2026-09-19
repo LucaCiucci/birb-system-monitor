@@ -1,13 +1,14 @@
-use std::{collections::HashSet, fmt::Display, sync::Arc};
+use std::{collections::HashSet, fmt::Display};
 
-use egui::{Grid, RichText, WidgetText, mutex::Mutex};
+use egui::{Grid, RichText, WidgetText};
 use human_units::{FormatDuration, FormatSize};
 use serde::{Deserialize, Serialize};
 use sysinfo::Pid;
 
 use crate::gui::{
     Panel,
-    backend::sysinfo::{ProcessDetail, ProcessMetrics, SysinfoSharedState},
+    app::state::FrontendState,
+    backend::sysinfo::{ProcessDetail, ProcessMetrics},
 };
 
 #[derive(Serialize, Deserialize)]
@@ -22,14 +23,12 @@ impl Default for SelectedProcessPanelConfig {
 }
 
 pub(super) struct SelectedProcessPanel {
-    state: Arc<Mutex<SysinfoSharedState>>,
     config: SelectedProcessPanelConfig,
 }
 
 impl SelectedProcessPanel {
-    pub(super) fn new(state: Arc<Mutex<SysinfoSharedState>>) -> Self {
+    pub(super) fn new() -> Self {
         Self {
-            state,
             config: SelectedProcessPanelConfig::default(),
         }
     }
@@ -40,16 +39,15 @@ impl Panel for SelectedProcessPanel {
         "Selected Process".into()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui) {
-        let state = self.state.lock();
+    fn ui(&mut self, data: &mut FrontendState, ui: &mut egui::Ui) {
+        let state = &data.sysinfo.state;
         let Some(_) = state.data.last() else {
             ui.label("Loading...");
             return;
         };
 
         let existing_pids: HashSet<Pid> = state.process_info.keys().copied().collect();
-        drop(state);
-        let mut state = self.state.lock();
+        let state = &mut data.sysinfo.state;
         state.process_selection.retain_existing_pids(&existing_pids);
 
         let mut selected_pids: Vec<Pid> = state
@@ -62,19 +60,16 @@ impl Panel for SelectedProcessPanel {
         selected_pids.sort();
 
         if selected_pids.is_empty() {
-            drop(state);
             ui.label("No selected process.");
             return;
         }
 
         let Some(pid) = selected_pids.get(self.config.selected_index).copied() else {
-            drop(state);
             ui.label("No selected process.");
             return;
         };
 
         let Some(info) = state.process_info.get(&pid) else {
-            drop(state);
             ui.label("Selected process not found.");
             return;
         };

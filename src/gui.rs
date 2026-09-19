@@ -3,6 +3,8 @@ pub mod backend;
 use ecow::EcoString;
 use egui::{Ui, WidgetText};
 use serde::{Deserialize, Serialize};
+
+use crate::gui::app::state::FrontendState;
 pub mod app;
 pub mod panels;
 pub mod save;
@@ -18,7 +20,7 @@ pub struct PanelInfo {
 
 pub trait Panel {
     fn title(&mut self) -> WidgetText;
-    fn ui(&mut self, ui: &mut Ui);
+    fn ui(&mut self, data: &mut FrontendState, ui: &mut Ui);
     fn scroll_bars(&self) -> [bool; 2] {
         [false, true]
     }

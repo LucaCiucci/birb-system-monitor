@@ -1,18 +1,16 @@
-use crate::backend::sysinfo::ComponentsSnapshot as SnapshotData;
+use crate::{backend::sysinfo::ComponentsSnapshot as SnapshotData, gui::app::state::FrontendState};
 use std::collections::BTreeSet;
-use std::sync::Arc;
 
-use egui::{Color32, WidgetText, mutex::Mutex};
+use egui::{Color32, WidgetText};
 use egui_plot::{AxisHints, Corner, Legend, Line, Plot, PlotPoints};
 use serde::{Deserialize, Serialize};
 
-use crate::gui::{Panel, backend::sysinfo::SysinfoSharedState};
+use crate::gui::Panel;
 
 const MIN_TIME_SECONDS: f64 = 0.0;
 const MAX_LEGEND_LEN: usize = 22;
 
 pub(super) struct TemperatureChartPanel {
-    state: Arc<Mutex<SysinfoSharedState>>,
     config: Config,
 }
 
@@ -30,9 +28,8 @@ impl Default for Config {
 }
 
 impl TemperatureChartPanel {
-    pub(super) fn new(state: Arc<Mutex<SysinfoSharedState>>) -> Self {
+    pub(super) fn new() -> Self {
         Self {
-            state,
             config: Config::default(),
         }
     }
@@ -43,8 +40,8 @@ impl Panel for TemperatureChartPanel {
         "Temperature Chart".into()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui) {
-        let data = self.state.lock();
+    fn ui(&mut self, data: &mut FrontendState, ui: &mut egui::Ui) {
+        let data = &data.sysinfo.state;
 
         let Some(latest) = data.temperatures.last() else {
             ui.label("Loading...");

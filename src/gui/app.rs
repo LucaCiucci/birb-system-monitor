@@ -1,10 +1,10 @@
 use std::{collections::HashMap, time::Duration};
 
-use crate::gui::panels::PanelId;
+use crate::gui::{app::state::FrontendState, panels::PanelId};
 
 use super::{
     Panel,
-    backend::{Connection, FrontendState},
+    backend::Connection,
     save::Profile,
     tabs::{Tab, default_dock_state},
     widgets::placeholder_sentence,
@@ -17,6 +17,7 @@ use ordered_hash_map::OrderedHashMap;
 use tracing::info;
 
 mod icon;
+pub mod state;
 
 pub fn main(ssh: Option<String>, ssh_bin: String) -> anyhow::Result<()> {
     let app_id = env!("CARGO_PKG_NAME");
@@ -53,16 +54,11 @@ struct MonitorApp {
 }
 
 impl MonitorApp {
-    fn reset(&mut self, cx: &egui::Context) {
+    fn reset(&mut self) {
         self.connection.take();
         self.loaded_profile = None;
         self.frontend = FrontendState::new();
-        match Connection::connect(
-            cx.clone(),
-            &self.frontend,
-            self.ssh.as_deref(),
-            &self.ssh_bin,
-        ) {
+        match Connection::connect(&self.frontend, self.ssh.as_deref(), &self.ssh_bin) {
             Ok(connection) => {
                 self.connection = Some(connection);
                 self.connection_error = None;
@@ -97,7 +93,7 @@ impl MonitorApp {
             .map(|p| p.dock_states.clone())
             .unwrap_or_default();
 
-        let frontend = FrontendState::new();
+        let mut frontend = FrontendState::new();
         if let Some(profile) = &loaded_profile {
             frontend.apply_config(&profile.frontend_config);
         }
@@ -122,12 +118,7 @@ impl MonitorApp {
             }
         }
 
-        let connection = Some(Connection::connect(
-            _cc.egui_ctx.clone(),
-            &frontend,
-            ssh.as_deref(),
-            &ssh_bin,
-        )?);
+        let connection = Some(Connection::connect(&frontend, ssh.as_deref(), &ssh_bin)?);
         Ok(Self {
             ssh,
             ssh_bin,
@@ -169,7 +160,7 @@ impl MonitorApp {
 
             ui.menu_button("view", |ui| {
                 if ui.button("Reset layout").clicked() {
-                    self.reset(ui.ctx());
+                    self.reset();
                 }
             });
 
@@ -203,8 +194,9 @@ impl eframe::App for MonitorApp {
             ui.colored_label(Color32::RED, error);
         }
         if let Some(connection) = &mut self.connection {
+            connection.receive(&mut self.frontend);
             connection.sync_config(&self.frontend);
-            let status = connection.status.lock();
+            let status = &connection.status;
             if status.disconnected {
                 ui.colored_label(
                     Color32::RED,
@@ -215,7 +207,7 @@ impl eframe::App for MonitorApp {
                 ui.colored_label(Color32::RED, error);
             }
         }
-        // Retry configuration sends if a bounded command queue was temporarily full.
+        // Poll incoming samples and retry commands even when the UI is idle.
         ui.ctx().request_repaint_after(Duration::from_millis(250));
         egui::Panel::bottom("footer").show(ui, |ui| {
             ui.centered_and_justified(|ui| {
@@ -287,7 +279,7 @@ impl eframe::App for MonitorApp {
             .style(egui_dock::Style::from_egui(ui.style().as_ref()))
             .show_inside(
                 ui,
-                &mut MyTabViewer::new(&self.loaded_profile, &self.frontend, &mut self.panels),
+                &mut MyTabViewer::new(&self.loaded_profile, &mut self.frontend, &mut self.panels),
             );
         });
     }
@@ -325,14 +317,14 @@ impl eframe::App for MonitorApp {
 
 struct MyTabViewer<'a> {
     loaded_profile: &'a Option<Profile>,
-    frontend: &'a FrontendState,
+    frontend: &'a mut FrontendState,
     panels: &'a mut HashMap<(PanelId, Uuid), Box<dyn Panel>>,
 }
 
 impl<'a> MyTabViewer<'a> {
     fn new(
         loaded_profile: &'a Option<Profile>,
-        frontend: &'a FrontendState,
+        frontend: &'a mut FrontendState,
         panels: &'a mut HashMap<(PanelId, Uuid), Box<dyn Panel>>,
     ) -> Self {
         Self {
@@ -388,8 +380,10 @@ impl<'a> TabViewer for MyTabViewer<'a> {
     fn ui(&mut self, ui: &mut Ui, tab: &mut Self::Tab) {
         match tab {
             Tab::Panel(id, uuid) => {
-                let panel = self.get_panel(id, uuid);
-                panel.ui(ui);
+                // Ensure creation/config loading, then borrow the two fields separately.
+                self.get_panel(id, uuid);
+                let panel = self.panels.get_mut(&(*id, *uuid)).unwrap();
+                panel.ui(self.frontend, ui);
             }
             Tab::Other(name) => {
                 ui.label(format!("This is the {name} tab"));

@@ -1,7 +1,7 @@
-use crate::backend::sysinfo::ComponentsSnapshot;
-use std::{collections::HashMap, collections::HashSet, sync::Arc};
+use crate::{backend::sysinfo::ComponentsSnapshot, gui::app::state::FrontendState};
+use std::{collections::HashMap, collections::HashSet};
 
-use egui::{Color32, ProgressBar, Stroke, Ui, WidgetText, mutex::Mutex};
+use egui::{Color32, ProgressBar, Stroke, Ui, WidgetText};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{Corner, FilledArea, Legend, Line, Plot, PlotPoints};
 use human_units::FormatSize;
@@ -9,20 +9,18 @@ use sysinfo::Pid;
 
 use crate::gui::{
     Panel,
-    backend::sysinfo::{ProcessInfo, SnapshotData, SysinfoSharedState},
+    backend::sysinfo::{ProcessInfo, SnapshotData},
 };
 
 const MIN_USAGE_PERCENT: f64 = 0.0;
 const MAX_USAGE_PERCENT: f64 = 100.0;
 const MIN_TIME_SECONDS: f64 = 0.0;
 
-pub(super) struct DashboardPanel {
-    state: Arc<Mutex<SysinfoSharedState>>,
-}
+pub(super) struct DashboardPanel;
 
 impl DashboardPanel {
-    pub(super) fn new(state: Arc<Mutex<SysinfoSharedState>>) -> Self {
-        Self { state }
+    pub(super) fn new() -> Self {
+        Self
     }
 }
 
@@ -31,8 +29,8 @@ impl Panel for DashboardPanel {
         "Dashboard".into()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui) {
-        let data = self.state.lock();
+    fn ui(&mut self, data: &mut FrontendState, ui: &mut egui::Ui) {
+        let data = &data.sysinfo.state;
 
         let Some(latest) = data.data.last() else {
             ui.label("Loading...");

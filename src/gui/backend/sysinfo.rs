@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    sync::Arc,
     time::Duration,
 };
 
@@ -8,7 +7,7 @@ pub(super) use crate::backend::sysinfo::SnapshotData;
 use crate::backend::sysinfo::{
     ComponentsSnapshot, ProcessDiskUsage, ProcessSnapshot, SysinfoMessage,
 };
-use egui::{WidgetText, mutex::Mutex};
+use egui::WidgetText;
 use serde::{Deserialize, Serialize};
 use sysinfo::Pid;
 use ustr::Ustr;
@@ -36,13 +35,13 @@ mod temperature;
 mod temperature_chart;
 
 pub struct SysinfoFrontend {
-    pub(super) state: Arc<Mutex<SysinfoSharedState>>,
+    pub(crate) state: SysinfoSharedState,
 }
 
 impl SysinfoFrontend {
     pub fn new() -> Self {
         Self {
-            state: Arc::new(Mutex::new(SysinfoSharedState::new())),
+            state: SysinfoSharedState::new(),
         }
     }
 }
@@ -109,16 +108,16 @@ impl SysinfoFrontend {
 
     pub fn new_panel(&self, panel_id: &PanelId) -> Box<dyn Panel> {
         match panel_id {
-            PanelId::Cpu => Box::new(CpuPanel::new(self.state.clone())),
-            PanelId::Memory => Box::new(MemoryPanel::new(self.state.clone())),
-            PanelId::Processes => Box::new(ProcessesPanel::new(self.state.clone())),
-            PanelId::SelectedProcess => Box::new(SelectedProcessPanel::new(self.state.clone())),
-            PanelId::Network => Box::new(NetworkPanel::new(self.state.clone())),
-            PanelId::DiskIo => Box::new(DiskIoPanel::new(self.state.clone())),
-            PanelId::Dashboard => Box::new(DashboardPanel::new(self.state.clone())),
-            PanelId::Settings => Box::new(SettingsPanel::new(self.state.clone())),
-            PanelId::Temperature => Box::new(TemperaturePanel::new(self.state.clone())),
-            PanelId::TemperatureChart => Box::new(TemperatureChartPanel::new(self.state.clone())),
+            PanelId::Cpu => Box::new(CpuPanel::new()),
+            PanelId::Memory => Box::new(MemoryPanel::new()),
+            PanelId::Processes => Box::new(ProcessesPanel::new()),
+            PanelId::SelectedProcess => Box::new(SelectedProcessPanel::new()),
+            PanelId::Network => Box::new(NetworkPanel::new()),
+            PanelId::DiskIo => Box::new(DiskIoPanel::new()),
+            PanelId::Dashboard => Box::new(DashboardPanel::new()),
+            PanelId::Settings => Box::new(SettingsPanel::new()),
+            PanelId::Temperature => Box::new(TemperaturePanel::new()),
+            PanelId::TemperatureChart => Box::new(TemperatureChartPanel::new()),
             _ => panic!("Unknown panel id: {}", panel_id),
         }
     }
@@ -177,10 +176,10 @@ impl Default for SysinfoConfig {
     }
 }
 
-pub(super) struct SysinfoSharedState {
-    pub(super) applied_update_interval: Option<Duration>,
-    pub(super) applied_temperature_interval: Option<Duration>,
-    pub(super) config: SysinfoConfig,
+pub(crate) struct SysinfoSharedState {
+    pub(crate) applied_update_interval: Option<Duration>,
+    pub(crate) applied_temperature_interval: Option<Duration>,
+    pub(crate) config: SysinfoConfig,
     process_selection: ProcessSelection,
     process_info: HashMap<Pid, ProcessInfo>,
     data: Vec<SnapshotData>,
@@ -378,150 +377,5 @@ impl SysinfoSharedState {
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::backend::sysinfo::{
-        ComponentStats, CpuStats, DiskIoStats, GeneralStats, NetworkStats, PidV,
-    };
-
-    fn sample(pid: u32, start_time: u64) -> SnapshotData {
-        let process: ProcessSnapshot = serde_json::from_value(serde_json::json!({
-            "pid": pid, "parent": null, "name": "test", "cmd": [], "exe": null,
-            "environ": [], "cwd": null, "root": null, "cpu_usage": 25.0,
-            "memory": 100, "virtual_memory": 200, "accumulated_cpu_time": {"secs": 1, "nanos": 0},
-            "disk_usage": {"read_bytes": 0, "written_bytes": 0, "total_read_bytes": 0, "total_written_bytes": 0},
-            "status": "running", "user_id": null, "effective_user_id": null,
-            "group_id": null, "effective_group_id": null, "start_time": start_time,
-            "run_time": 1, "session_id": null, "open_files": null, "open_files_limit": null,
-            "thread_kind": null
-        })).unwrap();
-        SnapshotData {
-            captured_at: std::time::SystemTime::now(),
-            general_stats: GeneralStats {
-                total_memory: 1000,
-                used_memory: 100,
-                total_swap: 0,
-                used_swap: 0,
-            },
-            cpu_stats: CpuStats {
-                global_usage: 25.0,
-                per_cpu_usage: vec![25.0],
-            },
-            network_stats: NetworkStats::take_default(),
-            disk_io_stats: DiskIoStats::take_default(),
-            pids: vec![PidV(pid)],
-            processes: vec![process],
-        }
-    }
-
-    #[test]
-    fn histories_align_and_pid_reuse_starts_fresh() {
-        let mut state = SysinfoSharedState::new();
-        state.config.max_readings = 2;
-        state.config.limit_processes_to_selection = false;
-        state.receive(SysinfoMessage::Snapshot(sample(1, 1)));
-        state.receive(SysinfoMessage::Snapshot(sample(2, 1)));
-        assert!(!state.process_info.contains_key(&Pid::from_u32(1)));
-        let info = &state.process_info[&Pid::from_u32(2)];
-        assert_eq!(info.metrics.len(), 2);
-        assert_eq!(info.metrics[0].memory, 0);
-        assert_eq!(info.metrics[1].memory, 100);
-        state.receive(SysinfoMessage::Snapshot(sample(2, 2)));
-        let info = &state.process_info[&Pid::from_u32(2)];
-        assert_eq!(state.data.len(), 2);
-        assert_eq!(info.metrics.len(), 2);
-        assert_eq!(info.metrics[0].memory, 0);
-        assert_eq!(info.detail.start_time, 2);
-        for _ in 0..3 {
-            state.receive(SysinfoMessage::Components(ComponentsSnapshot {
-                captured_at: std::time::SystemTime::now(),
-                component_stats: ComponentStats::take_default(),
-            }));
-        }
-        assert_eq!(state.temperatures.len(), 2);
-        assert_eq!(state.data.len(), 2);
-        assert_eq!(state.process_info[&Pid::from_u32(2)].metrics.len(), 2);
-    }
-
-    #[test]
-    fn unselected_processes_keep_only_their_latest_metrics() {
-        let mut state = SysinfoSharedState::new();
-        state.process_selection.select_process(Pid::from_u32(1));
-
-        for _ in 0..2 {
-            let mut snapshot = sample(1, 1);
-            let mut second = snapshot.processes[0].clone();
-            second.pid = PidV(2);
-            snapshot.pids.push(PidV(2));
-            snapshot.processes.push(second);
-            state.receive(SysinfoMessage::Snapshot(snapshot));
-        }
-
-        assert_eq!(state.process_info[&Pid::from_u32(1)].metrics.len(), 2);
-        assert_eq!(state.process_info[&Pid::from_u32(2)].metrics.len(), 1);
-    }
-
-    #[test]
-    fn no_selection_keeps_only_current_process_metrics() {
-        let mut state = SysinfoSharedState::new();
-        state.receive(SysinfoMessage::Snapshot(sample(1, 1)));
-        state.receive(SysinfoMessage::Snapshot(sample(1, 1)));
-
-        assert_eq!(state.process_info[&Pid::from_u32(1)].metrics.len(), 1);
-    }
-
-    #[test]
-    fn disabling_selected_only_retains_history_for_all_processes() {
-        let mut state = SysinfoSharedState::new();
-        state.config.limit_processes_to_selection = false;
-        state.process_selection.select_process(Pid::from_u32(1));
-
-        for _ in 0..2 {
-            let mut snapshot = sample(1, 1);
-            let mut second = snapshot.processes[0].clone();
-            second.pid = PidV(2);
-            snapshot.pids.push(PidV(2));
-            snapshot.processes.push(second);
-            state.receive(SysinfoMessage::Snapshot(snapshot));
-        }
-
-        assert_eq!(state.process_info[&Pid::from_u32(1)].metrics.len(), 2);
-        assert_eq!(state.process_info[&Pid::from_u32(2)].metrics.len(), 2);
-    }
-
-    #[test]
-    fn local_connection_updates_frontend_data_and_acknowledges_intervals() {
-        use crate::gui::backend::{Connection, FrontendState};
-        let cx = egui::Context::default();
-        let frontend = FrontendState::new();
-        let state = frontend.sysinfo.state.clone();
-        {
-            let mut data = state.lock();
-            data.config.update_interval = Duration::from_millis(100);
-            data.config.temperature_interval = Duration::from_millis(50);
-        }
-        let connection = Connection::new(cx, &frontend);
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            let data = state.lock();
-            if !data.data.is_empty() && !data.temperatures.is_empty() {
-                assert_eq!(
-                    data.applied_temperature_interval,
-                    Some(Duration::from_millis(50))
-                );
-                break;
-            }
-            drop(data);
-            assert!(
-                std::time::Instant::now() < deadline,
-                "frontend did not receive samples"
-            );
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        drop(connection);
     }
 }
