@@ -54,11 +54,16 @@ struct MonitorApp {
 }
 
 impl MonitorApp {
-    fn reset(&mut self) {
+    fn reset(&mut self, cx: &egui::Context) {
         self.connection.take();
         self.loaded_profile = None;
         self.frontend = FrontendState::new();
-        match Connection::connect(&self.frontend, self.ssh.as_deref(), &self.ssh_bin) {
+        match Connection::connect(
+            cx.clone(),
+            &self.frontend,
+            self.ssh.as_deref(),
+            &self.ssh_bin,
+        ) {
             Ok(connection) => {
                 self.connection = Some(connection);
                 self.connection_error = None;
@@ -118,7 +123,12 @@ impl MonitorApp {
             }
         }
 
-        let connection = Some(Connection::connect(&frontend, ssh.as_deref(), &ssh_bin)?);
+        let connection = Some(Connection::connect(
+            _cc.egui_ctx.clone(),
+            &frontend,
+            ssh.as_deref(),
+            &ssh_bin,
+        )?);
         Ok(Self {
             ssh,
             ssh_bin,
@@ -160,7 +170,7 @@ impl MonitorApp {
 
             ui.menu_button("view", |ui| {
                 if ui.button("Reset layout").clicked() {
-                    self.reset();
+                    self.reset(ui.ctx());
                 }
             });
 
@@ -207,7 +217,7 @@ impl eframe::App for MonitorApp {
                 ui.colored_label(Color32::RED, error);
             }
         }
-        // Poll incoming samples and retry commands even when the UI is idle.
+        // Messages wake the UI immediately; keep a fallback for retrying queued commands.
         ui.ctx().request_repaint_after(Duration::from_millis(250));
         egui::Panel::bottom("footer").show(ui, |ui| {
             ui.centered_and_justified(|ui| {

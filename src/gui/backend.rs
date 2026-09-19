@@ -7,6 +7,7 @@ use crate::{
 };
 use std::{
     collections::{HashMap, HashSet},
+    thread::JoinHandle,
     time::Duration,
 };
 
@@ -25,6 +26,8 @@ pub struct Connection {
     transport: Transport,
     commands: tokio::sync::mpsc::Sender<Command>,
     messages: tokio::sync::mpsc::Receiver<Message>,
+    relay: Option<JoinHandle<()>>,
+    cx: egui::Context,
     sent: HashMap<SystemId, Duration>,
     process_detail_selection: Option<(HashSet<PidV>, bool)>,
     socket: Option<String>,
@@ -54,6 +57,7 @@ impl Transport {
 
 impl Connection {
     pub fn connect(
+        cx: egui::Context,
         frontend: &FrontendState,
         host: Option<&str>,
         ssh_bin: &str,
@@ -68,10 +72,13 @@ impl Connection {
                 (Transport::Local(systems), commands, messages)
             }
         };
+        let (messages, relay) = relay_messages(messages, cx.clone())?;
         let mut result = Self {
             transport,
             commands,
             messages,
+            relay: Some(relay),
+            cx,
             sent: HashMap::new(),
             process_detail_selection: None,
             socket: None,
@@ -103,13 +110,15 @@ impl Connection {
                     }
                     Message::CommandError(error) => self.status.error = Some(error),
                 },
-                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => return,
                 Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
                     self.status.disconnected = true;
-                    break;
+                    return;
                 }
             }
         }
+        // The batch limit may leave queued messages after the relay's last wakeup.
+        self.cx.request_repaint();
     }
 
     pub fn sync_config(&mut self, frontend: &FrontendState) {
@@ -176,5 +185,31 @@ impl Drop for Connection {
         // Unblock pending sends before waiting for the backend to stop.
         self.messages.close();
         self.transport.shutdown();
+        if let Some(relay) = self.relay.take() {
+            let _ = relay.join();
+        }
     }
+}
+
+// The relay owns only channels and an egui wakeup handle, never frontend state.
+fn relay_messages(
+    mut source: tokio::sync::mpsc::Receiver<Message>,
+    cx: egui::Context,
+) -> std::io::Result<(tokio::sync::mpsc::Receiver<Message>, JoinHandle<()>)> {
+    let (tx, rx) = tokio::sync::mpsc::channel(64);
+    let relay = std::thread::Builder::new()
+        .name("frontend-messages".into())
+        .spawn(move || {
+            while let Some(message) = source.blocking_recv() {
+                if tx.blocking_send(message).is_err() {
+                    return;
+                }
+                // Publish before waking the UI so it can read the message immediately.
+                cx.request_repaint();
+            }
+            // Make channel closure visible before waking the UI to report disconnect.
+            drop(tx);
+            cx.request_repaint();
+        })?;
+    Ok((rx, relay))
 }
