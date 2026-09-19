@@ -7,7 +7,7 @@ default:
 # Create all Linux packages
 package-linux: cross-debs flatpak appimage
 
-install-deb: cross-debs
+install-deb: (cross-deb "x86_64-unknown-linux-gnu")
     sudo dpkg -i target/debian/birb-monitor_*amd64.deb
 
 uninstall-deb:
